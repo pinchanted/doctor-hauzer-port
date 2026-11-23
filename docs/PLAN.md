@@ -32,7 +32,7 @@ Each item is a menu option where it changes the look, so the original look stays
 - **Texture-replacement system** (Dolphin-style: keyed by texture ID): drop hand-made or curated HD textures into a folder to override the AI ones. Best results on hero assets (doors, puzzles, documents) come from hand-tuning, not raw AI output.
 - Optional post effects: subtle bloom on light sources, film grain, CRT-free sharpening.
 
-**Uprez model testing:** run several upscalers (e.g. Real-ESRGAN variants, 4x-UltraSharp, Topaz-style models) per asset class (textures, pre-rendered stills, text images, FMV). Compare in side-by-side sheets, and record winners per class in `docs/UPREZ.md`. Same approach as the Sewer Shark FMV tests.
+**Uprez model:** textures and stills use **4x-PBRify_UpscalerDAT2_V1** (chosen 2026-11-23 from a 27-variant test; see `docs/UPREZ.md`). FMV gets its own test later.
 
 ## Disc survey (done)
 
@@ -98,8 +98,10 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
 
 - **2026-11-23** — Disc unpacked; stills, CEL textures, texture banks and meshes decoded (`docs/FORMATS.md`). Offline room renderer (`tools/render_room.py`) confirms room geometry, doors and windows. All 638 textures export cleanly. Upscaler test set (69 textures + 10 stills) is in `upscale_test/originals` on MELCHIOR.
 
+- **2026-11-23** — Upscaler test run (9 models × 3 pre-passes, 1080p room renders). **Chosen: 4x-PBRify_UpscalerDAT2_V1, no pre-pass** (`docs/UPREZ.md`). Production upscale of all 638 textures and 77 stills: `tools/upscale_all.bat`.
+
 ## Next steps
 
-1. Run upscaler comparisons on the test set (Aaron, on MELCHIOR); record winners in `docs/UPREZ.md`.
+1. Run `tools/upscale_all.bat` (Aaron) and review the 33-room before/after page.
 2. Find the room loader and macro VM in `launchme` (Ghidra): object state groups, room sections B/C/E (cameras, collision), macro opcodes.
 3. Player model and animation format (`HumanPol.bin`).

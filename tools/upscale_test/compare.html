@@ -91,7 +91,11 @@ const save = () => { try { localStorage.setItem('hauzer_picks', JSON.stringify(p
 const $ = id => document.getElementById(id);
 
 function variantsFor(set) { return DATA.variants.filter(v => !v.has || v.has[set]); }
-function path(set, v, id) { return set === 'rooms' ? `renders/${v}/${id}.png` : `variants/${v}/${set}/${id}.png`; }
+function path(set, v, id) {
+  const it = (DATA.sets[set] || []).find(x => x.id === id);
+  if (it && it.src && it.src[v]) return it.src[v];
+  return set === 'rooms' ? `renders/${v}/${id}.png` : `variants/${v}/${set}/${id}.png`;
+}
 function items() { return DATA.sets[st.set] || []; }
 function cur() { return items()[st.idx]; }
 function label(k) { const v = DATA.variants.find(x => x.key === k); return v ? v.label : k; }
