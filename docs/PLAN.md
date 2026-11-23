@@ -15,7 +15,7 @@ Each item is a menu option where it changes the look, so the original look stays
 - 3D rooms, player and items rendered at native screen resolution (960×544 Vita, 1920×1080 Flip 2) instead of 320×240.
 - 60 fps rendering with interpolated animation (the original runs well below 30).
 - Texture filtering with mipmaps (the 3DO had none) plus MSAA; no more shimmering or crawling edges.
-- All textures AI-upscaled on MELCHIOR. De-band and de-dither the 16-bit sources *before* upscaling so the models don't sharpen the dither pattern.
+- All 638 unique textures AI-upscaled on MELCHIOR. They are 256-colour quantized (32-entry palette × 8 brightness levels), so a de-quantization/denoise pass runs *before* upscaling; otherwise the models sharpen the colour banding.
 - Stills (title, examine views, documents, item cards) AI-upscaled: 2× Vita, 4× Android.
 - High-resolution font rendering (vector or 4× bitmap), not the 3DO's bitmap font.
 - FMV upscaled plus frame-interpolated to 60 fps, H.264 hardware decode on both targets.
@@ -94,6 +94,12 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
 7. **Graphics tiers 2–3** — widescreen, lighting, texture-replacement system.
 8. **QoL** — faster walk/turn, optional modern (analog) controls alongside tank controls, quick save.
 
-## Next step
+## Status
 
-Phase 1: room file structure and the macro bytecode, cross-referenced against the exe in Ghidra.
+- **2026-11-23** — Disc unpacked; stills, CEL textures, texture banks and meshes decoded (`docs/FORMATS.md`). Offline room renderer (`tools/render_room.py`) confirms room geometry, doors and windows. All 638 textures export cleanly. Upscaler test set (69 textures + 10 stills) is in `upscale_test/originals` on MELCHIOR.
+
+## Next steps
+
+1. Run upscaler comparisons on the test set (Aaron, on MELCHIOR); record winners in `docs/UPREZ.md`.
+2. Find the room loader and macro VM in `launchme` (Ghidra): object state groups, room sections B/C/E (cameras, collision), macro opcodes.
+3. Player model and animation format (`HumanPol.bin`).
