@@ -1,0 +1,30 @@
+# Game data — never commit (copyrighted; rebuilt from the user's own disc)
+disc/
+extracted/
+assets_src/
+assets_hd/
+*.iso
+*.bin
+*.cue
+*.chd
+*.img
+*.aifc
+*.aiff
+
+# Build output
+build/
+out/
+*.vpk
+*.apk
+*.o
+*.so
+
+# Python
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
