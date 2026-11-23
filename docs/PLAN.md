@@ -100,8 +100,10 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
 
 - **2026-11-23** — Upscaler test run (9 models × 3 pre-passes, 1080p room renders). **Chosen: 4x-PBRify_UpscalerDAT2_V1, no pre-pass** (`docs/UPREZ.md`). Production upscale of all 638 textures and 77 stills: `tools/upscale_all.bat`.
 
+- **2026-11-23** — Production upscale done on MELCHIOR: 638 textures + 77 stills at 4×, 0 failures, verified (sizes, transparency). Script VM decoded: token format, 133 opcodes with exact operand counts, control flow/arithmetic/events named; all 45 scripts disassemble (`tools/macro_dis.py`).
+
 ## Next steps
 
-1. Run `tools/upscale_all.bat` (Aaron) and review the 33-room before/after page.
-2. Find the room loader and macro VM in `launchme` (Ghidra): object state groups, room sections B/C/E (cameras, collision), macro opcodes.
+1. Room loader in `launchme` (`0x6ac0`/`0x6da0`): sections B/C/E (cameras, collision, zones), object state groups.
+2. Name the game commands (`0xFC60–0xFCCF`), starting with the most frequent.
 3. Player model and animation format (`HumanPol.bin`).

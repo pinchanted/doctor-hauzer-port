@@ -61,9 +61,39 @@ Open questions: what selects the visible state group; room001 object 105 (a larg
 ## Player and items 🟡
 `human/HumanPol.bin`: offset table, then meshes in the standard mesh format (first: 91 verts, 96 faces) — likely body parts and/or animation frames. `human/RGB.bin` starts with `mato` (material?) ❓. `item/ItemPol.bin` similar.
 
-## Scripts and text 🟡
+## Scripts — `macro/macroNNN`, `human/macroNNN` ✅ (core) / 🟡 (game commands)
+Decoded from the VM in `launchme` (dispatcher `0xa500`, context struct at `0x35460`). Disassembler: `tools/macro_dis.py`.
+
+A script is a stream of big-endian `(tag, value)` int32 pairs ("tokens"):
+
+| Tag | Meaning |
+|---|---|
+| 1 | integer literal |
+| 2 | label = token index (jump target is `index × 2` words) |
+| 3 | local variable (array at context `+0x10`) |
+| 4 | opcode `0xFCxx`, comparator `0xFCD0–D5`, or `0` = separator |
+| 5 | string character (file names) |
+| 6 | global variable (game-wide array at `0x3D308`; flags, inventory, progress) |
+
+The dispatcher executes opcode tokens and skips every other token, so assignments are infix: `<var> <op> <expr>`. Every opcode's token count comes from its handler's script-counter increment (`ARITY` in the tool). 133 opcodes in all.
+
+**Execution model:** a block of `DEF var = n` runs at load (before `BEGIN`). Then the script registers event handlers: `ON (event) GOTO L` (`0xFC08`, one-value events such as 1 = room entered, 2 = every frame) and `ON (type, object, param) GOTO L` (`0xFC11`, e.g. `(41, 2, 0)`). It runs until `WAIT` (`0xFC02`) yields the frame. Call stack: 32 entries.
+
+| Opcode | Name | Opcode | Name |
+|---|---|---|---|
+| FC01 | BEGIN (end of DEF block) | FC0D | FOR var, from, to, step |
+| FC02 | WAIT (yield frame) | FC0E | NEXT |
+| FC03 | GOTO label | FC0F | MARK (save resume point) |
+| FC04 | PRINT (debug) | FC10 | WHILE |
+| FC05 | IF a cmp b label (jumps when true) | FC11 | ON (type, object, param) GOTO |
+| FC06 | DEF var = const | FCC1/C2/C3 | FlagOn / FlagOff / flag op |
+| FC08 | ON event GOTO | FCD0–D5 | `>=  ==  >  <  !=  <=` |
+| FC09 / FC0A | CALL label / RETURN | FCE0–E7 | `= += -= *= /= %= ++ --` |
+
+Game commands `0xFC60–0xFCCF` (~100) are unnamed so far. Getters that write the preceding variable: FC63–65, FC7B–7C, FC8D–8F, FCB7–BC. Names will come from tracing each handler, starting with the frequent ones (`FCA3`/`FCA4`/`FCA0`/`FCA1` with `(var, x, y, z)`: likely actor/camera move or position; `FCAA` (3 ints, 491 uses); `FCA7`/`FCAF`/`FCB2`: 0-operand, very frequent).
+
+## Text — `mes/` 🟡
 - `start.script`: ASCII room table — `ROOMnnn id x y z` (spawn position).
-- `macro/macroNNN`: bytecode for the room event VM. Opcodes per exe strings: GOTO, CALL, RETURN, IF, FOR, NEXT, WHILE, SET, ADD, INC, SUB, DEC, MUL, DIV, FlagOn, FlagOff…
 - `mes/*.scp`, `MESSAGE*.TXT`: Shift-JIS text with section markers (`玄関(F1R001)` = entrance hall).
 
 ## Audio and video 🟡
@@ -72,4 +102,6 @@ Open questions: what selects the visible state group; room001 object 105 (a larg
 - `stream/*DS`: 3DO DataStream (32 KB blocks): `SHDR`, `CTRL`, `FILL`, `SNDS` (audio), `FILM` (`FHDR`/`FRME`, Cinepak `cvid`, 30 fps; 260×200, 300×160, 320×240…).
 
 ## Executable — `launchme` 🟡
-ARM AIF, not compressed: RO 197,324 B, RW 46,740 B, ZI 280,292 B. Debug/error strings intact (file paths, macro opcode names).
+ARM AIF, not compressed: RO 197,324 B, RW 46,740 B, ZI 280,292 B, image base 0. Debug/error strings are stored inline after the functions that use them. `tools/armanalyze.py` finds ~1,060 functions and resolves string references.
+- Named (Norcroft embedded names): only the 3DO SDK libraries, i.e. DataStreaming (DataAcq, SAudio and Ctrl subscribers) and the Cinepak codec (`Decompresx`, `ExpandCodeBook`…). So the FMV uses the stock SDK stream format.
+- Game code is unnamed. Known so far: script VM dispatcher `0xa500`, expression evaluator `0xad40`, script handlers `0x753c–0xa4f0`; room-file loaders reference `roomXXX.bin` at `0x6ac0` / `0x6da0`; script loaders `0x6b6c` / `0x6d80` / `0x6f94`.

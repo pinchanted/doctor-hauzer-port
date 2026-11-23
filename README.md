@@ -21,9 +21,11 @@ No game data is in this repository. The tools extract and rebuild every asset fr
 | `tools/render_room.py <roomNNN.bin> <out.png>` | Offline software render of a room for format validation (`--cam`, `--at`, `--group`). |
 | `tools/export_textures.py <OrgData> <outdir>` | Exports every unique texture (rooms, player, items) to PNG plus `textures.json`. |
 | `tools/make_testset.py <textures> <stills> <outdir>` | Picks a representative upscaler test set and a contact sheet. |
+| `tools/macro_dis.py --dir <OrgData> --out <dir>` | Disassembles all 45 room/event scripts into readable listings. |
+| `tools/armanalyze.py launchme --funcs/--xref/--dis` | Function finder, string cross-references and annotated disassembly for the 3DO executable. |
 | `tools/upscale_all.bat` | Production upscale of every texture and still with the chosen model (`docs/UPREZ.md`), plus a 33-room before/after review page. |
 | `tools/upscale_test/run_upscale_test.bat` | One-click upscaler comparison: 9 models × 3 pre-passes, room renders, HTML viewer. See its README. |
 
 ## Status
 
-Phase 1 (formats) — stills, textures and room geometry decoded; see [`docs/FORMATS.md`](docs/FORMATS.md). Room logic, player model and macro bytecode are next.
+Phase 1 (formats) — stills, textures and room geometry decoded; see [`docs/FORMATS.md`](docs/FORMATS.md). Script bytecode decoded (`tools/macro_dis.py`); room loader (cameras, collision) and game-command names are next.
