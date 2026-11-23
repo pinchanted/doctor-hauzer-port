@@ -11,9 +11,9 @@ Layout (all big-endian int32) as understood so far:
   0x14  n_objects    number of object records that are active (approx.)
   0x18  id_base      object id base (100 -> ids 101, 102, ...)
   0x1C  mesh_off     room shell mesh offset
-  0x20  ?            (0x9c8 in room001)
+  0x20  shell_size   room shell mesh size in bytes
   0x3C  list_count   followed by a small list of ints (purpose TBD)
-  0x80  object records, 0x80 bytes each, until mesh_off:
+  0x80  object records, 0x80 bytes each; only whole records before mesh_off:
         +0x00..0x10  flags/state (TBD)
         +0x14        1
         +0x18        object id
@@ -72,7 +72,9 @@ def read_mesh(d, off):
     faces = []
     for i in range(nf):
         n, tex, *vs = struct.unpack_from('>6i', d, p + 24 * i)
-        faces.append((n, tex, tuple(vs[:n] if n <= 4 else vs)))
+        vs = tuple(vs[:n] if 0 < n <= 4 else vs)
+        if all(0 <= v < nv for v in vs):
+            faces.append((n, tex, vs))
     return Mesh(verts, faces, unk)
 
 
@@ -81,10 +83,10 @@ def load(path):
     hdr = struct.unpack_from('>16I', d, 0)
     tex_off, mesh_off = hdr[0], hdr[7]
     room = Room(hdr, read_mesh(d, mesh_off), data=d)
-    for r in range(0x80, mesh_off, 0x80):
+    for r in range(0x80, mesh_off - 0x7F, 0x80):
         w = struct.unpack_from('>32i', d, r)
         moff, msize = w[7], w[8]
-        if not (0 < moff < len(d) and msize > 0):
+        if not (0 < moff and msize >= 32 and moff + msize <= len(d)):
             continue
         room.objects.append(RoomObject(r, w, w[6], read_mesh(d, moff), (w[9], w[10], w[11]), w[15], w[4]))
     n = struct.unpack_from('>I', d, tex_off)[0]

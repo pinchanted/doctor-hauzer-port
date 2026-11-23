@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Doctor Hauzer — upscaling comparison</title>
+<script src="data.js"></script>
+<style>
+  :root { --bg:#121214; --panel:#1c1c20; --line:#2e2e34; --text:#e8e6e3; --dim:#9a978f; --gold:#d8b45a; --accent:#7fb2ff; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font:18px/1.4 "Segoe UI", system-ui, sans-serif; }
+  header { display:flex; align-items:center; gap:24px; padding:14px 22px; border-bottom:1px solid var(--line); background:var(--panel); }
+  h1 { font-size:24px; margin:0; font-weight:600; letter-spacing:.3px; }
+  h1 span { color:var(--gold); }
+  .tabs button, .seg button { font:inherit; font-size:19px; padding:9px 20px; background:transparent; color:var(--dim); border:1px solid var(--line); cursor:pointer; }
+  .tabs button:first-child, .seg button:first-child { border-radius:10px 0 0 10px; }
+  .tabs button:last-child, .seg button:last-child { border-radius:0 10px 10px 0; }
+  .tabs button.on, .seg button.on { background:#2a2a31; color:var(--text); border-color:#4a4a55; }
+  .bar { display:flex; flex-wrap:wrap; align-items:center; gap:14px; padding:12px 22px; border-bottom:1px solid var(--line); }
+  select, .btn { font:inherit; font-size:18px; background:#24242a; color:var(--text); border:1px solid #3a3a43; border-radius:10px; padding:8px 12px; }
+  .btn { cursor:pointer; }
+  .btn:hover, select:hover { border-color:#5a5a66; }
+  .btn.pick { background:#3a3017; border-color:var(--gold); color:var(--gold); }
+  label.small { color:var(--dim); font-size:16px; }
+  main { display:flex; height:calc(100% - 136px); }
+  #stage { flex:1; overflow:auto; position:relative; display:flex; align-items:flex-start; justify-content:center; padding:18px; }
+  aside { width:380px; border-left:1px solid var(--line); background:var(--panel); padding:16px 18px; overflow:auto; }
+  aside h2 { font-size:19px; margin:4px 0 10px; }
+  aside p { color:var(--dim); font-size:15px; margin:6px 0 12px; }
+  .tally div { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid var(--line); font-size:16px; }
+  .tally b { color:var(--gold); }
+  /* A/B slider */
+  .ab { position:relative; user-select:none; cursor:ew-resize; box-shadow:0 0 0 1px #000, 0 8px 30px #0008; }
+  .ab img { display:block; }
+  .ab .top { position:absolute; inset:0; overflow:hidden; }
+  .ab .top img { position:absolute; left:0; top:0; }
+  .ab .handle { position:absolute; top:0; bottom:0; width:3px; background:var(--gold); box-shadow:0 0 8px #000; }
+  .tag { position:absolute; top:10px; padding:5px 12px; border-radius:8px; background:#000b; font-size:17px; pointer-events:none; }
+  .tag.a { left:10px; } .tag.b { right:10px; color:var(--accent); }
+  /* grid */
+  .grid { display:grid; gap:16px; width:100%; }
+  .tile { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px; cursor:pointer; }
+  .tile:hover { border-color:#55555f; }
+  .tile.best { border-color:var(--gold); }
+  .tile img { width:100%; display:block; border-radius:6px; background:#000; }
+  .tile .cap { font-size:16px; padding:8px 2px 0; overflow-wrap:anywhere; }
+  .tile .cap span { display:block; color:var(--dim); font-size:14px; margin-top:2px; }
+  img.px { image-rendering: pixelated; }
+  .hint { color:var(--dim); font-size:15px; }
+  kbd { background:#2a2a31; border:1px solid #444; border-radius:5px; padding:1px 6px; font-size:14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>Doctor Hauzer</span> — upscaling comparison</h1>
+  <div class="tabs" id="tabs"></div>
+  <div class="seg" id="modes"></div>
+</header>
+<div class="bar">
+  <button class="btn" id="prev">◀</button>
+  <select id="item"></select>
+  <button class="btn" id="next">▶</button>
+  <span id="abctl">
+    <label class="small">A</label> <select id="va"></select>
+    <button class="btn" id="swap" title="swap A and B">⇄</button>
+    <label class="small">B</label> <select id="vb"></select>
+  </span>
+  <label class="small">Zoom</label>
+  <select id="zoom"><option value="fit">Fit</option><option value="1">100%</option><option value="2">200%</option><option value="3">300%</option></select>
+  <button class="btn" id="pick">★ Pick B as best</button>
+  <span class="hint"><kbd>←</kbd><kbd>→</kbd> image · <kbd>↑</kbd><kbd>↓</kbd> change B · <kbd>P</kbd> pick</span>
+</div>
+<main>
+  <div id="stage"></div>
+  <aside>
+    <h2>Your picks</h2>
+    <p>For each image, choose the version you like best (★). The tally shows which models win in each category. When you're done, copy the summary and paste it to Claude.</p>
+    <div class="tally" id="tally"></div>
+    <p></p>
+    <button class="btn" id="copy">Copy summary</button>
+    <button class="btn" id="clear">Clear picks</button>
+    <h2 style="margin-top:22px">Models</h2>
+    <div id="models" class="tally"></div>
+  </aside>
+</main>
+<script>
+const SETS = [['rooms', 'Rooms'], ['textures', 'Textures'], ['stills', 'Stills']];
+let st = { set: 'rooms', mode: 'ab', idx: 0, a: null, b: null, zoom: 'fit', split: 0.5 };
+let picks = {};
+try { picks = JSON.parse(localStorage.getItem('hauzer_picks') || '{}'); } catch (e) { picks = {}; }
+const save = () => { try { localStorage.setItem('hauzer_picks', JSON.stringify(picks)); } catch (e) {} };
+const $ = id => document.getElementById(id);
+
+function variantsFor(set) { return DATA.variants.filter(v => !v.has || v.has[set]); }
+function path(set, v, id) { return set === 'rooms' ? `renders/${v}/${id}.png` : `variants/${v}/${set}/${id}.png`; }
+function items() { return DATA.sets[st.set] || []; }
+function cur() { return items()[st.idx]; }
+function label(k) { const v = DATA.variants.find(x => x.key === k); return v ? v.label : k; }
+
+function build() {
+  $('tabs').innerHTML = SETS.map(([k, n]) => `<button data-set="${k}" class="${k === st.set ? 'on' : ''}">${n} (${(DATA.sets[k] || []).length})</button>`).join('');
+  $('modes').innerHTML = [['ab', 'A/B slider'], ['grid', 'All versions']].map(([k, n]) => `<button data-mode="${k}" class="${k === st.mode ? 'on' : ''}">${n}</button>`).join('');
+  $('item').innerHTML = items().map((it, i) => `<option value="${i}">${it.label}</option>`).join('');
+  $('item').value = st.idx;
+  const vs = variantsFor(st.set);
+  const opts = vs.map(v => `<option value="${v.key}">${v.label}</option>`).join('');
+  $('va').innerHTML = opts; $('vb').innerHTML = opts;
+  if (!vs.find(v => v.key === st.a)) st.a = vs[0].key;
+  if (!vs.find(v => v.key === st.b)) st.b = (vs.find(v => v.model) || vs[1] || vs[0]).key;
+  $('va').value = st.a; $('vb').value = st.b; $('zoom').value = st.zoom;
+  $('abctl').style.display = st.mode === 'ab' ? '' : 'none';
+  draw(); tally();
+}
+
+function sizeFor(img) {
+  const stage = $('stage');
+  if (st.zoom !== 'fit') return [img.naturalWidth * +st.zoom, img.naturalHeight * +st.zoom];
+  const W = stage.clientWidth - 40, H = stage.clientHeight - 40;
+  const k = Math.min(W / img.naturalWidth, H / img.naturalHeight);
+  return [Math.round(img.naturalWidth * k), Math.round(img.naturalHeight * k)];
+}
+
+function draw() {
+  const it = cur(); if (!it) { $('stage').innerHTML = '<p>No images in this set.</p>'; return; }
+  const best = (picks[st.set] || {})[it.id];
+  $('pick').classList.toggle('pick', best === st.b);
+  const px = st.zoom !== 'fit' && +st.zoom > 1 ? 'px' : '';
+  if (st.mode === 'ab') {
+    $('stage').innerHTML = `<div class="ab" id="ab"><img id="ia" class="${px}" src="${path(st.set, st.a, it.id)}">
+      <div class="top" id="top"><img id="ib" class="${px}" src="${path(st.set, st.b, it.id)}"></div>
+      <div class="handle" id="hd"></div><div class="tag a">A: ${label(st.a)}</div><div class="tag b">B: ${label(st.b)}${best === st.b ? ' ★' : ''}</div></div>`;
+    const ia = $('ia'), ib = $('ib');
+    const fit = () => { const [w, h] = sizeFor(ia); for (const im of [ia, ib]) { im.style.width = w + 'px'; im.style.height = h + 'px'; } $('ab').style.width = w + 'px'; $('ab').style.height = h + 'px'; setSplit(st.split); };
+    ia.onload = fit; if (ia.complete) fit();
+    const ab = $('ab');
+    const move = e => { const r = ab.getBoundingClientRect(); setSplit(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))); };
+    ab.onmousemove = e => { if (e.buttons || !st.drag) move(e); };
+    ab.onmousedown = e => { st.drag = true; move(e); };
+  } else {
+    const vs = variantsFor(st.set);
+    const cols = st.set === 'textures' ? 'repeat(auto-fill,minmax(230px,1fr))' : 'repeat(auto-fill,minmax(440px,1fr))';
+    $('stage').innerHTML = `<div class="grid" style="grid-template-columns:${cols}">` + vs.map(v => `
+      <div class="tile ${best === v.key ? 'best' : ''}" data-v="${v.key}"><img loading="lazy" src="${path(st.set, v.key, it.id)}">
+      <div class="cap">${v.label}${best === v.key ? ' <b style="color:var(--gold)">★</b>' : ''}<span>${v.model ? (DATA.info[v.model] || {}).about || '' : ''}</span></div></div>`).join('') + '</div>';
+  }
+}
+
+function setSplit(f) {
+  st.split = f;
+  const ab = $('ab'); if (!ab) return;
+  const w = ab.clientWidth;
+  $('top').style.clipPath = `inset(0 0 0 ${f * w}px)`;
+  $('hd').style.left = (f * w - 1) + 'px';
+}
+
+function tally() {
+  let html = '';
+  for (const [k, n] of SETS) {
+    const p = picks[k] || {}; const c = {};
+    Object.values(p).forEach(v => c[v] = (c[v] || 0) + 1);
+    const rows = Object.entries(c).sort((a, b) => b[1] - a[1]);
+    html += `<div><b>${n}</b><span>${Object.keys(p).length} / ${(DATA.sets[k] || []).length} picked</span></div>`;
+    html += rows.map(([v, c]) => `<div><span>${label(v)}</span><span>${c}</span></div>`).join('');
+  }
+  $('tally').innerHTML = html;
+  $('models').innerHTML = Object.entries(DATA.info).map(([k, m]) => `<div style="display:block"><b style="color:var(--text);font-weight:600">${m.name}</b><br><span style="color:var(--dim);font-size:15px">${m.about}</span></div>`).join('');
+}
+
+function summary() {
+  let s = 'Doctor Hauzer upscale picks\n';
+  for (const [k, n] of SETS) {
+    const p = picks[k] || {}; const c = {};
+    Object.values(p).forEach(v => c[v] = (c[v] || 0) + 1);
+    s += `\n${n} (${Object.keys(p).length} picked):\n`;
+    Object.entries(c).sort((a, b) => b[1] - a[1]).forEach(([v, c]) => s += `  ${c}  ${label(v)} [${v}]\n`);
+    Object.entries(p).forEach(([id, v]) => s += `    ${id} -> ${v}\n`);
+  }
+  return s;
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-set],[data-mode],.tile');
+  if (!t) return;
+  if (t.dataset.set) { st.set = t.dataset.set; st.idx = 0; build(); }
+  else if (t.dataset.mode) { st.mode = t.dataset.mode; build(); }
+  else if (t.dataset.v) { st.b = t.dataset.v; st.mode = 'ab'; build(); }
+});
+document.addEventListener('mouseup', () => st.drag = false);
+$('item').onchange = e => { st.idx = +e.target.value; draw(); };
+$('prev').onclick = () => step(-1); $('next').onclick = () => step(1);
+$('va').onchange = e => { st.a = e.target.value; draw(); };
+$('vb').onchange = e => { st.b = e.target.value; draw(); };
+$('swap').onclick = () => { [st.a, st.b] = [st.b, st.a]; build(); };
+$('zoom').onchange = e => { st.zoom = e.target.value; draw(); };
+$('pick').onclick = pick;
+$('copy').onclick = () => { const s = summary(); navigator.clipboard ? navigator.clipboard.writeText(s).then(() => $('copy').textContent = 'Copied ✓', () => prompt('Copy this:', s)) : prompt('Copy this:', s); };
+$('clear').onclick = () => { if (confirm('Clear all picks?')) { picks = {}; save(); build(); } };
+window.onresize = () => draw();
+function step(d) { const n = items().length; if (!n) return; st.idx = (st.idx + d + n) % n; $('item').value = st.idx; draw(); }
+function pick() { const it = cur(); if (!it) return; (picks[st.set] = picks[st.set] || {})[it.id] = st.b; save(); draw(); tally(); }
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'SELECT') return;
+  if (e.key === 'ArrowLeft') step(-1);
+  else if (e.key === 'ArrowRight') step(1);
+  else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    const vs = variantsFor(st.set); let i = vs.findIndex(v => v.key === st.b);
+    i = (i + (e.key === 'ArrowDown' ? 1 : -1) + vs.length) % vs.length; st.b = vs[i].key; $('vb').value = st.b; draw(); e.preventDefault();
+  } else if (e.key === 'p' || e.key === 'P') pick();
+});
+build();
+</script>
+</body>
+</html>
