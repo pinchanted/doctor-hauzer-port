@@ -15,8 +15,8 @@ Each item is a menu option where it changes the look, so the original look stays
 - 3D rooms, player and items rendered at native screen resolution (960×544 Vita, 1920×1080 Flip 2) instead of 320×240.
 - 60 fps rendering with interpolated animation (the original runs well below 30).
 - Texture filtering with mipmaps (the 3DO had none) plus MSAA; no more shimmering or crawling edges.
-- All 638 unique textures AI-upscaled on MELCHIOR. They are 256-colour quantized (32-entry palette × 8 brightness levels), so a de-quantization/denoise pass runs *before* upscaling; otherwise the models sharpen the colour banding.
-- Stills (title, examine views, documents, item cards) AI-upscaled: 2× Vita, 4× Android.
+- All 638 unique textures AI-upscaled on MELCHIOR to 4× masters. They are 256-colour quantized (32-entry palette × 8 brightness levels); the test showed the chosen model handles that well without a separate de-banding pass.
+- Stills (title, examine views, documents, item cards) AI-upscaled to 4× masters (1280×960), then resized per screen: 1440×1080 Flip 2, 725×544 Vita.
 - High-resolution font rendering (vector or 4× bitmap), not the 3DO's bitmap font.
 - FMV upscaled plus frame-interpolated to 60 fps, H.264 hardware decode on both targets.
 
@@ -62,7 +62,7 @@ The disc uses the 3DO Opera file system; `tools/opera_extract.py` unpacks it to 
 2. **The executable is small and unprotected.** ~197 KB of ARM code with descriptive error strings. A full decomp is feasible, but the plan is a native engine reimplementation (as with Sewer Shark), using the exe as reference only.
 3. **Translation is easy for text, harder for images.** Dialogue and notes are plain Shift-JIS text files, so swapping in English is a data change. But many stills (item descriptions, documents, diary) have **Japanese text baked into the image**. They need English replacements: either the fan patch's images (diff the romhacking.net v1.2.1 patch against this dump) or new high-res lettering, which is better anyway after the uprez.
 4. **Every asset type maps to an uprez path:**
-   - 320×240 stills (title, examine views, documents) → AI upscale (4× Android / 2× Vita); re-letter text-bearing ones.
+   - 320×240 stills (title, examine views, documents) → AI upscale to 4× masters, resized per screen; re-letter text-bearing ones.
    - Room and model textures (3DO CELs) → AI upscale; 3D geometry re-rendered at native resolution and 60 fps.
    - Cinepak FMV (~260×200 @ 30 fps) → decode, AI upscale plus frame interpolation, re-encode H.264 (Vita hardware decoder, Android MediaCodec). Same pipeline as Sewer Shark.
    - SDX2 audio → decode to PCM → Opus/OGG.
@@ -78,7 +78,7 @@ doctor-hauzer/
   platform/android  NDK + SDL2, 1920×1080 (RP Flip 2)
   tools/         Python: extractors, converters, asset packer
   assets_src/    extracted originals (never shipped)
-  assets_hd/     upscaled outputs built on MELCHIOR (per-target packs: 2× Vita, 4× Android)
+  assets_hd/     4× upscaled masters built on MELCHIOR; per-target packs derived from them
 ```
 
 The original disc stays the source of truth. The tools rebuild the HD packs from it, so the repo needs no copyrighted data.
