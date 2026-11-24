@@ -156,6 +156,25 @@ int text_render_box(const uint32_t *cp, int px, Image *out) {
         x += adv * scale;
         if (cp[i + 1]) x += stbtt_GetCodepointKernAdvance(&g_font, (int)cp[i], (int)cp[i + 1]) * scale;
     }
+    /* embolden a little (the default outline instance is light): blend each pixel toward the max of
+     * its neighbourhood, radius ~px/30 */
+    {
+        int r = px / 30 > 1 ? px / 30 : 1;
+        uint8_t *src = malloc((size_t)out->w * out->h);
+        memcpy(src, alpha, (size_t)out->w * out->h);
+        for (int y = 0; y < out->h; y++)
+            for (int xx = 0; xx < out->w; xx++) {
+                int m = 0;
+                for (int dy = -r; dy <= r; dy++)
+                    for (int dx = -r; dx <= r; dx++) {
+                        int yy = y + dy, x2 = xx + dx;
+                        if (yy >= 0 && yy < out->h && x2 >= 0 && x2 < out->w && src[(size_t)yy * out->w + x2] > m) m = src[(size_t)yy * out->w + x2];
+                    }
+                int a = src[(size_t)y * out->w + xx];
+                alpha[(size_t)y * out->w + xx] = (uint8_t)(a + (m - a) * 6 / 10);
+            }
+        free(src);
+    }
     /* panel: translucent black with rounded corners; text with a soft offset shadow */
     int rad = pady, sh = px / 16 + 1;
     for (int y = 0; y < out->h; y++)
