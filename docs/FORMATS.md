@@ -27,9 +27,10 @@ Standard 3DO CEL chunks: `CCB ` (flags, PIXC, PRE0/PRE1, width, height), optiona
 +0x08 u32 runtime buffer size (= 6*n_verts + 16)
 +0x0C 5 × u32 0xFFFFFFFF (runtime pointers)
 +0x20 n_verts × (i32 x, i32 y, i32 z)      y points DOWN; floor at y = +200; rooms on a 200-unit grid
-then  n_faces × (i32 n, i32 tex, i32 v0, v1, v2, v3)   n = 4 (quads)
+then  n_faces × (i32 n, i32 tex, i32 v0 … v[n-1])     VARIABLE length: quads 6 words, triangles 5
 ```
-Quad → texture mapping: v0 = top-left, v1 = top-right, v2 = bottom-right, v3 = bottom-left (3DO CEL corner mapping; verified by render).
+Verified: all 689 room meshes and 69 player meshes parse to exactly their stated size (14,490 quads, 4,212 triangles, a few 2-vertex faces).
+Quad → texture mapping: v0 = top-left, v1 = top-right, v2 = bottom-right, v3 = bottom-left (3DO CEL corner mapping; verified by render). Triangles are drawn as a CEL quad whose last corner collapses onto v2, so the whole texture squeezes into the triangle.
 
 ## Room files — `room/roomNNN.bin` ✅
 Verified against `launchme`: loader `0x148dc`, object builder `0x149dc`, collision builder `0x12ae0`, renderer `0x12ee4`, collision test `0x10ee0`. Parser: `tools/room.py`.
@@ -64,8 +65,23 @@ Verified against `launchme`: loader `0x148dc`, object builder `0x149dc`, collisi
 
 **Camera table** — 32-byte entries `(id, eye x, y, z, target x, y, z, 0)`, id = entry index, ending at the first mismatch (3–14 per room). Camera 0 is an overhead view; cameras 1+ match the zone ids in the grid. The bytes after the table are leftover build-tool memory. Field of view not yet confirmed (50° is a visual estimate).
 
-## Player and items 🟡
-`human/HumanPol.bin`: offset table, then meshes in the standard mesh format (first: 91 verts, 96 faces) — likely body parts and/or animation frames. `human/RGB.bin` starts with `mato` (material?) ❓. `item/ItemPol.bin` similar.
+## Player and items — `human/`, `item/` ✅
+`HumanPol.bin`: `u32 count` (69), `count × (offset, size)`, then meshes (standard format).
+
+| Meshes | Content |
+|---|---|
+| 0–46 | full-body poses (vertex animation; 91 verts / 96 faces each): idle, walk, run, fall/death |
+| 47–56 | close-up heads with expressions (cutscenes); 49 back of head, 50 hair |
+| 57 | in-game head (51 verts) |
+| 58 / 59 | left / right hand |
+| 60–63 | YES/NO choice panels (3D UI) |
+| 64–68 | held items: candelabra, knife, rod, … |
+
+**Rigid parts on a vertex-animated body:** every body pose has three thin marker triangles (verts 62–64 left hand, 65–67 right hand, 68–70 head; table entry 14) giving *(attach point, forward, up)*. The engine places the head/hand meshes on them each frame: local +x → right, +y → −up, +z → −forward. Implemented in `tools/human.py`.
+
+**Texture tables** for the player and item meshes live in `launchme`'s data (`0x322FC`–`0x32BFC` player, `0x32BFC`+ items): 16 `(type, value)` pairs per mesh. Type 1 = room texture bank (rooms convert their single-word tables to this), **2 = `HumanTex.bin`**, **3 = `ItemTex.bin`**, 4 = TBD, 0 = none. Mesh → table mapping from the loader at `0x3480` (`TABLE_FOR_MESH`).
+
+`RGB.bin` is a "mato" (*matome*, bundle) file: three tables of 16 RGB colours (5-bit), not used by the textured player; purpose TBD (likely lighting or effect colours).
 
 ## Scripts — `macro/macroNNN`, `human/macroNNN` ✅ (core) / 🟡 (game commands)
 Decoded from the VM in `launchme` (dispatcher `0xa500`, context struct at `0x35460`). Disassembler: `tools/macro_dis.py`.

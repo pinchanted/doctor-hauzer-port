@@ -104,9 +104,11 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
 
 - **2026-11-23** — Room format fully mapped from the loader code: object records start at 0x18 (record 0 = shell) with position, rotation, texture table, trigger id, area and visibility; collision grid doubles as the camera-zone map; camera table found (3–14 fixed cameras per room). Rooms now render from the game's own cameras. Rooms hold extra "areas" (e.g. door-transition scenes).
 
+- **2026-11-23** — Faces are variable length (triangles were being dropped): every mesh in the game now parses exactly. Player character decoded: 47 vertex-animated body poses with head and hands attached at per-frame marker triangles, close-up expression heads, items, YES/NO panels; texture tables read from the executable. The player renders correctly inside rooms from the game's cameras.
+
 ## Next steps
 
-1. Player model and animation format (`HumanPol.bin`) — needed to put the player character in the rooms.
+1. Animation sequences: which pose frames make the idle, walk, run and fall cycles, and their timing (from the player-movement code).
 2. Name the game commands (`0xFC60–0xFCCF`), starting with the most frequent; find what sets the current area and camera.
 3. Camera field of view / projection from the renderer (`0x12ee4` → `0x13c50` / `0x14118`), checked against gameplay footage.
 4. Start the engine: PC build that loads a room, draws it from the zone camera with HD textures, and runs its script.

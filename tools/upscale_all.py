@@ -25,7 +25,7 @@ TEX_SRC = os.path.join(PROJECT, 'extracted', 'textures')
 STILL_SRC = os.path.join(PROJECT, 'extracted', 'png')
 OUT = os.path.join(PROJECT, 'assets_hd')
 REVIEW = os.path.join(OUT, 'review')
-RENDER_DIR = 'renders_v2'  # v2: corrected room parser (areas, visibility, rotation) and real game cameras
+RENDER_DIR = 'renders_v3'  # v3: variable-length faces (triangles), areas, visibility, rotation, real game cameras
 TEST_DONE = os.path.join(T.RESULTS, 'variants', f'{PREPASS}__{MODEL_KEY}')
 
 

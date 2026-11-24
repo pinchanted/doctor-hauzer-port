@@ -22,7 +22,8 @@ Object records: 0x80 bytes each from 0x18 until index == -1. Record 0 is the roo
   +0x7C initially visible
 
 Mesh: n_verts, n_faces, runtime size (6*n_verts+16), five -1 words; then n_verts*(x,y,z), y DOWN
-  (floor at +200); then n_faces*(n, tex, v0, v1, v2, v3). Quad corners map to CEL corners
+  (floor at +200); then n_faces variable-length faces (n, tex, v0..v[n-1]): triangles and quads.
+  Quad corners map to CEL corners
   v0=top-left, v1=top-right, v2=bottom-right, v3=bottom-left.
 
 Collision/camera grid: 20x20 cells of 200 units covering x,z in [-2000, 2000], cell (i, j) spans
@@ -105,17 +106,25 @@ class Room:
 
 
 def read_mesh(d, off):
+    """Faces are variable length: (n, tex, v0 .. v[n-1]) - triangles 5 words, quads 6."""
     nv, nf, unk = struct.unpack_from('>3I', d, off)
     p = off + 32
     verts = [struct.unpack_from('>3i', d, p + 12 * i) for i in range(nv)]
     p += 12 * nv
     faces = []
-    for i in range(nf):
-        n, tex, *vs = struct.unpack_from('>6i', d, p + 24 * i)
-        vs = tuple(vs[:n] if 0 < n <= 4 else vs)
+    for _ in range(nf):
+        if p + 8 > len(d):
+            break
+        n, tex = struct.unpack_from('>2i', d, p)
+        if not 1 <= n <= 8 or p + 8 + 4 * n > len(d):  # a few 2-vertex (line) faces exist
+            break
+        vs = struct.unpack_from(f'>{n}i', d, p + 8)
         if all(0 <= v < nv for v in vs):
             faces.append((n, tex, vs))
-    return Mesh(verts, faces, unk)
+        p += 8 + 4 * n
+    m = Mesh(verts, faces, unk)
+    m.end = p
+    return m
 
 
 def load(path):

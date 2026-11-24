@@ -66,6 +66,18 @@ def sample(tex, u, v, bilinear):
     return top * (1 - fy) + bot * fy
 
 
+def _collapsed_quad(p, t, is_obj, n=4):
+    p0, p1, p2 = (np.array(v, float) for v in p)
+    P = lambda u, v: (1 - v) * ((1 - u) * p0 + u * p1) + v * p2
+    out = []
+    for i in range(n):
+        for j in range(n):
+            u0, u1, v0, v1 = i / n, (i + 1) / n, j / n, (j + 1) / n
+            out.append(([tuple(P(u0, v0)), tuple(P(u1, v0)), tuple(P(u1, v1)), tuple(P(u0, v1))], t, is_obj,
+                        [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]))
+    return out
+
+
 def render(rm, eye, at, W, H, fov, tex_scale=1, skip_ids=(), group=0, hd_dir=None,
            bilinear=False, ssaa=1):
     W0, H0 = W, H
@@ -80,11 +92,18 @@ def render(rm, eye, at, W, H, fov, tex_scale=1, skip_ids=(), group=0, hd_dir=Non
         if o.obj_id in skip_ids or o.area != group or not o.visible:
             continue
         wv = o.world_verts()
+        is_obj = o is not rm.objects[0]
         for n, t, vs in o.mesh.faces:
             if n == 4:
-                quads.append(([wv[i] for i in vs], o.bank_tex(t), o is not rm.objects[0]))
+                quads.append(([wv[i] for i in vs], o.bank_tex(t), is_obj))
+            elif n == 3:
+                # the 3DO draws a triangle as a CEL quad with its last corner collapsed onto v2, so
+                # the whole texture is squeezed into the triangle: approximate with bilinear patches
+                quads.extend(_collapsed_quad([wv[i] for i in vs], o.bank_tex(t), is_obj))
     uv4 = [(0, 0), (1, 0), (1, 1), (0, 1)]
-    for verts, t, is_obj in quads:
+    for q in quads:
+        verts, t, is_obj = q[:3]
+        quv = q[3] if len(q) > 3 else uv4
         if t is None or not (0 <= t < len(texs)):
             continue
         tex = texs[t]
@@ -112,7 +131,7 @@ def render(rm, eye, at, W, H, fov, tex_scale=1, skip_ids=(), group=0, hd_dir=Non
             iz = [1 / p[2] for p in P]
             invz = w0 * iz[0] + w1 * iz[1] + w2 * iz[2]
             z = 1 / invz
-            uvs = [uv4[i] for i in tri]
+            uvs = [quv[i] for i in tri]
             u = (w0 * uvs[0][0] * iz[0] + w1 * uvs[1][0] * iz[1] + w2 * uvs[2][0] * iz[2]) * z
             v = (w0 * uvs[0][1] * iz[0] + w1 * uvs[1][1] * iz[1] + w2 * uvs[2][1] * iz[2]) * z
             texel = sample(tex, u, v, bilinear)
