@@ -102,8 +102,11 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
 
 - **2026-11-23** — Production upscale done on MELCHIOR: 638 textures + 77 stills at 4×, 0 failures, verified (sizes, transparency). Script VM decoded: token format, 133 opcodes with exact operand counts, control flow/arithmetic/events named; all 45 scripts disassemble (`tools/macro_dis.py`).
 
+- **2026-11-23** — Room format fully mapped from the loader code: object records start at 0x18 (record 0 = shell) with position, rotation, texture table, trigger id, area and visibility; collision grid doubles as the camera-zone map; camera table found (3–14 fixed cameras per room). Rooms now render from the game's own cameras. Rooms hold extra "areas" (e.g. door-transition scenes).
+
 ## Next steps
 
-1. Room loader in `launchme` (`0x6ac0`/`0x6da0`): sections B/C/E (cameras, collision, zones), object state groups.
-2. Name the game commands (`0xFC60–0xFCCF`), starting with the most frequent.
-3. Player model and animation format (`HumanPol.bin`).
+1. Player model and animation format (`HumanPol.bin`) — needed to put Hauzer's visitor in the rooms.
+2. Name the game commands (`0xFC60–0xFCCF`), starting with the most frequent; find what sets the current area and camera.
+3. Camera field of view / projection from the renderer (`0x12ee4` → `0x13c50` / `0x14118`), checked against gameplay footage.
+4. Start the engine: PC build that loads a room, draws it from the zone camera with HD textures, and runs its script.

@@ -31,32 +31,38 @@ then  n_faces × (i32 n, i32 tex, i32 v0, v1, v2, v3)   n = 4 (quads)
 ```
 Quad → texture mapping: v0 = top-left, v1 = top-right, v2 = bottom-right, v3 = bottom-left (3DO CEL corner mapping; verified by render).
 
-## Room files — `room/roomNNN.bin` 🟡
-| Offset | Meaning |
+## Room files — `room/roomNNN.bin` ✅
+Verified against `launchme`: loader `0x148dc`, object builder `0x149dc`, collision builder `0x12ae0`, renderer `0x12ee4`, collision test `0x10ee0`. Parser: `tools/room.py`.
+
+| Header | Meaning |
 |---|---|
 | 0x00 | texture bank offset ✅ |
-| 0x04 | section B offset ❓ (~12 KB in room001; follows the bank) |
-| 0x08 / 0x0C | section C offset / size ❓ (3.2 KB) — candidates: cameras, collision, zones |
-| 0x10 | section E offset ❓ (to EOF, 2.4 KB) |
-| 0x14 | count (10 in room001) 🟡 |
-| 0x18 | object id base (100) ✅ |
-| 0x1C | room shell mesh offset ✅ — shell faces use bank indices directly |
-| 0x20 | ❓ |
-| 0x3C | count + list of ints ❓ (resembles an object texture table) |
-| 0x80… | object records, 0x80 bytes each, up to the shell mesh |
+| 0x04 | unused by the loader: a stale build-tool value pointing into the texture bank |
+| 0x08 / 0x0C | collision + camera-zone grid ("Atari Table" in the debug strings) / size `0xC80` ✅ |
+| 0x10 | camera table ✅ |
+| 0x14 | record count hint; 0x1C / 0x20 shell mesh offset / size (same as record 0) |
 
-Object record:
+**Object records** — 0x80 bytes each from **0x18**, until index = −1. Record 0 is the room shell.
+
 | Offset | Meaning |
 |---|---|
-| 0x00–0x0C | flags/state ❓ (e.g. `1,2,1,36` — possibly event or macro links) |
-| 0x10 | **state group** 🟡 — 0 = initial; 1, 2 … alternate versions (e.g. door slab open/closed) swapped by events |
-| 0x14 | 1 |
-| 0x18 | object id ✅ |
-| 0x1C / 0x20 | mesh offset / size ✅ |
-| 0x24–0x2C | position x, y, z ✅ |
-| 0x40… | **texture table**: face tex `t` → bank index `word[16 + t − 1]` ✅ |
+| +0x00 | object index (100, 101, …) ✅ |
+| +0x04 / +0x08 | mesh offset / size ✅ |
+| +0x0C | position x, y, z ✅ |
+| +0x18 | rotation x, y, z — 256 units per turn (11 objects game-wide, single axis) ✅ |
+| +0x24 | texture table, 16 entries: face tex `t` → bank index `table[t]` ✅ |
+| +0x64 / +0x68 / +0x6C | flags ❓ |
+| +0x70 | collidable/selectable 🟡 |
+| +0x74 | trigger id — matches the script's `ON (id, …)` handlers ✅ |
+| +0x78 | **area** ✅ — objects render and collide only while the global current area (`0x36698`) equals this. Area 0 is the room; areas 1+ are extra scenes in the same file. Room 001's areas 1 and 2 are the single- and double-door transition views. 1–5 areas per room. |
+| +0x7C | initially visible ✅ (e.g. stacked animation frames, only the first visible) |
 
-Open questions: what selects the visible state group; room001 object 105 (a large partition-like mesh in group 0); sections B/C/E. These need the room loader in `launchme`.
+**Collision / camera-zone grid** — 20 × 20 cells of 200 units covering x, z ∈ [−2000, 2000]; cell (i, j) spans x = −2000 + 200i … +200, z = 2000 − 200j … −200.
+- Layer 1 (400 ints): **camera zone**, i.e. the camera used while the player stands in the cell; 99 = solid.
+- Layer 2 (400 ints at +0x640): **trigger id** (script event, e.g. doors and bookshelves); 99 = solid.
+- A cell gets a 200 × 400 × 200 collision box when layer 2 ≠ 0 or layer 1 = 99.
+
+**Camera table** — 32-byte entries `(id, eye x, y, z, target x, y, z, 0)`, id = entry index, ending at the first mismatch (3–14 per room). Camera 0 is an overhead view; cameras 1+ match the zone ids in the grid. The bytes after the table are leftover build-tool memory. Field of view not yet confirmed (50° is a visual estimate).
 
 ## Player and items 🟡
 `human/HumanPol.bin`: offset table, then meshes in the standard mesh format (first: 91 verts, 96 faces) — likely body parts and/or animation frames. `human/RGB.bin` starts with `mato` (material?) ❓. `item/ItemPol.bin` similar.

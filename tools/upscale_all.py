@@ -25,6 +25,7 @@ TEX_SRC = os.path.join(PROJECT, 'extracted', 'textures')
 STILL_SRC = os.path.join(PROJECT, 'extracted', 'png')
 OUT = os.path.join(PROJECT, 'assets_hd')
 REVIEW = os.path.join(OUT, 'review')
+RENDER_DIR = 'renders_v2'  # v2: corrected room parser (areas, visibility, rotation) and real game cameras
 TEST_DONE = os.path.join(T.RESULTS, 'variants', f'{PREPASS}__{MODEL_KEY}')
 
 
@@ -128,10 +129,8 @@ def main():
         jobs = []
         for v, hd in (('original', None), ('hd', [os.path.join(OUT, 'textures')])):
             for r in room_ids:
-                cam = at = None; skip = []
-                if r == 'room001':
-                    cam, at, skip = (350, -150, 550), (-150, 100, -300), [105]
-                out = os.path.join(REVIEW, 'renders', v, r + '.png')
+                cam = at = None; skip = []  # None: the room's own camera 1
+                out = os.path.join(REVIEW, RENDER_DIR, v, r + '.png')
                 if not os.path.exists(out):
                     jobs.append((r, r, cam, at, skip, v, hd, out, True))
         if jobs:
@@ -155,7 +154,8 @@ def main():
         'info': {MODEL_KEY: {'name': entry[1], 'about': entry[5]}},
         'scale': T.SCALE,
         'sets': {
-            'rooms': [{'id': r, 'label': r} for r in room_ids],
+            'rooms': [{'id': r, 'label': r, 'src': {'original': f'{RENDER_DIR}/original/{r}.png', 'hd': f'{RENDER_DIR}/hd/{r}.png'}}
+                      for r in room_ids],
             'textures': [{'id': i.key, 'label': f'{i.key}  ({i.w}x{i.h})', 'src': {'original': rel(i.path), 'hd': rel(i.out)}}
                          for i in items if i.set == 'textures'],
             'stills': [{'id': i.key, 'label': i.key, 'src': {'original': rel(i.path), 'hd': rel(i.out)}}

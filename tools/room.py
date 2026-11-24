@@ -1,35 +1,39 @@
 #!/usr/bin/env python3
 """Doctor Hauzer room file (OrgData/room/roomNNN.bin) parser.
 
-Layout (all big-endian int32) as understood so far:
+Verified against launchme's loader (0x148dc), object builder (0x149dc), collision builder
+(0x12ae0), renderer (0x12ee4) and collision test (0x10ee0). All values big-endian int32.
 
-  0x00  tex_off      offset of texture bank (count + (offset,size) pairs, CEL chunks)
-  0x04  sec_b_off    unknown section B (follows texture bank)
-  0x08  sec_c_off    unknown section C
-  0x0C  sec_c_size
-  0x10  sec_e_off    unknown section E (to end of file)
-  0x14  n_objects    number of object records that are active (approx.)
-  0x18  id_base      object id base (100 -> ids 101, 102, ...)
-  0x1C  mesh_off     room shell mesh offset
-  0x20  shell_size   room shell mesh size in bytes
-  0x3C  list_count   followed by a small list of ints (purpose TBD)
-  0x80  object records, 0x80 bytes each; only whole records before mesh_off:
-        +0x00..0x10  flags/state (TBD)
-        +0x14        1
-        +0x18        object id
-        +0x1C        mesh offset
-        +0x20        mesh size
-        +0x24..0x2C  position x, y, z
-        +0x10        state group (0 = initial room state; 1, 2... alternate states swapped in by events)
-        +0x40        texture lookup table: face tex t -> bank index words[16 + t - 1]
+Header
+  0x00  texture bank offset (count, then (offset, size) pairs relative to the bank; CEL chunks)
+  0x04  unused by the loader (stale build-tool value; points into the texture bank)
+  0x08  collision/camera grid offset ("Atari Table"), 0x0C its size (always 0xC80)
+  0x10  camera table offset
+  0x14  record count hint, 0x1C shell mesh offset, 0x20 shell mesh size (same as record 0)
 
-Mesh:
-  +0x00 n_verts, +0x04 n_faces, +0x08 ?, +0x0C..0x1C five -1 words (runtime pointers)
-  +0x20 verts: n_verts * (x, y, z) int32 — y points DOWN (floor at y=+200)
-  then faces: n_faces * (n, tex, v0, v1, v2, v3) int32; n is 4 for quads
-  Quad corners map to CEL corners: v0=top-left, v1=top-right, v2=bottom-right, v3=bottom-left (verified visually).
+Object records: 0x80 bytes each from 0x18 until index == -1. Record 0 is the room shell.
+  +0x00 object index (100, 101, ...)      +0x04 mesh offset   +0x08 mesh size
+  +0x0C position x, y, z                  +0x18 rotation x, y, z (256 units per turn)
+  +0x24 texture table, 16 entries: face tex t -> bank index table[t]
+  +0x64, +0x68, +0x6C  flags (TBD)
+  +0x70 collidable/selectable flag        +0x74 trigger id (matches script ON (id, ...) events)
+  +0x78 area: objects exist only while the global current area equals this. Area 0 is the
+        room itself; areas 1+ are extra scenes in the same file (e.g. door-opening views)
+  +0x7C initially visible
+
+Mesh: n_verts, n_faces, runtime size (6*n_verts+16), five -1 words; then n_verts*(x,y,z), y DOWN
+  (floor at +200); then n_faces*(n, tex, v0, v1, v2, v3). Quad corners map to CEL corners
+  v0=top-left, v1=top-right, v2=bottom-right, v3=bottom-left.
+
+Collision/camera grid: 20x20 cells of 200 units covering x,z in [-2000, 2000], cell (i, j) spans
+  x = -2000+200*i .. +200, z = 2000-200*j .. -200. Layer 1 (400 ints): camera zone (camera id
+  used while the player stands there) or 99 = solid. Layer 2 (400 ints at +0x640): trigger id
+  (script event) or 99 = solid.
+
+Camera table: 32-byte entries (id, eye x, y, z, target x, y, z, 0) with id == entry index;
+  ends at the first mismatch. Camera 0 is an overhead view.
 """
-import struct
+import math, struct
 from dataclasses import dataclass, field
 
 
@@ -47,21 +51,57 @@ class RoomObject:
     obj_id: int
     mesh: Mesh
     pos: tuple
-    tex_override: int
-    group: int = 0
+    rot: tuple
+    table: tuple
+    area: int
+    visible: bool
+    trigger: int
+    collidable: int
+
+    @property
+    def group(self):  # backwards-compatible name
+        return self.area
 
     def bank_tex(self, t):
-        i = 16 + t - 1
-        return self.words[i] if 16 <= i < 32 else None
+        return self.table[t] if 0 <= t < 16 else None
+
+    def world_verts(self):
+        rx, ry, rz = (a * 2 * math.pi / 256 for a in self.rot)
+        out = []
+        for x, y, z in self.mesh.verts:
+            if rx:
+                y, z = y * math.cos(rx) - z * math.sin(rx), y * math.sin(rx) + z * math.cos(rx)
+            if ry:
+                x, z = x * math.cos(ry) + z * math.sin(ry), -x * math.sin(ry) + z * math.cos(ry)
+            if rz:
+                x, y = x * math.cos(rz) - y * math.sin(rz), x * math.sin(rz) + y * math.cos(rz)
+            out.append((x + self.pos[0], y + self.pos[1], z + self.pos[2]))
+        return out
+
+
+@dataclass
+class Camera:
+    cam_id: int
+    eye: tuple
+    target: tuple
 
 
 @dataclass
 class Room:
     header: tuple
-    shell: Mesh
     objects: list = field(default_factory=list)
     textures: list = field(default_factory=list)  # (offset, size) absolute
+    cameras: list = field(default_factory=list)
+    zones: list = field(default_factory=list)     # 20x20 camera zone / 99 solid
+    triggers: list = field(default_factory=list)  # 20x20 trigger id / 99 solid
     data: bytes = b''
+
+    @property
+    def shell(self):
+        return self.objects[0].mesh if self.objects else Mesh([], [])
+
+    def areas(self):
+        return sorted({o.area for o in self.objects})
 
 
 def read_mesh(d, off):
@@ -81,26 +121,46 @@ def read_mesh(d, off):
 def load(path):
     d = open(path, 'rb').read()
     hdr = struct.unpack_from('>16I', d, 0)
-    tex_off, mesh_off = hdr[0], hdr[7]
-    room = Room(hdr, read_mesh(d, mesh_off), data=d)
-    for r in range(0x80, mesh_off - 0x7F, 0x80):
-        w = struct.unpack_from('>32i', d, r)
-        moff, msize = w[7], w[8]
-        if not (0 < moff and msize >= 32 and moff + msize <= len(d)):
-            continue
-        room.objects.append(RoomObject(r, w, w[6], read_mesh(d, moff), (w[9], w[10], w[11]), w[15], w[4]))
+    room = Room(hdr, data=d)
+    k = 0
+    while 0x18 + 0x80 * (k + 1) <= len(d):
+        off = 0x18 + 0x80 * k
+        w = struct.unpack_from('>32i', d, off)
+        if w[0] == -1:
+            break
+        if 0 < w[1] and w[2] >= 32 and w[1] + w[2] <= len(d):
+            room.objects.append(RoomObject(off, w, w[0], read_mesh(d, w[1]), tuple(w[3:6]), tuple(w[6:9]),
+                                           tuple(w[9:25]), w[30], bool(w[31]), w[29], w[28]))
+        k += 1
+    tex_off = hdr[0]
     n = struct.unpack_from('>I', d, tex_off)[0]
     for i in range(n):
         o, s = struct.unpack_from('>II', d, tex_off + 4 + 8 * i)
         room.textures.append((tex_off + o, s))
+    C = hdr[2]
+    room.zones = list(struct.unpack_from('>400i', d, C))
+    room.triggers = list(struct.unpack_from('>400i', d, C + 0x640))
+    E = hdr[4]
+    for i in range(64):
+        if E + 32 * (i + 1) > len(d):
+            break
+        w = struct.unpack_from('>8i', d, E + 32 * i)
+        if w[0] != i:
+            break
+        room.cameras.append(Camera(i, tuple(w[1:4]), tuple(w[4:7])))
     return room
 
 
 if __name__ == '__main__':
     import sys
     r = load(sys.argv[1])
-    print('header', [hex(x) for x in r.header])
-    print('shell: %d verts, %d faces' % (len(r.shell.verts), len(r.shell.faces)))
-    print('textures:', len(r.textures))
+    print(f'{len(r.objects)} objects, areas {r.areas()}, {len(r.textures)} textures, {len(r.cameras)} cameras')
     for o in r.objects:
-        print(f'  obj {o.obj_id} @ {o.pos} verts={len(o.mesh.verts)} faces={len(o.mesh.faces)} tex_override={o.tex_override} words={o.words[:6]}')
+        print(f'  obj {o.obj_id} area {o.area} {"visible" if o.visible else "hidden "} pos {o.pos} rot {o.rot} '
+              f'trigger {o.trigger} faces {len(o.mesh.faces)}')
+    for c in r.cameras:
+        print(f'  camera {c.cam_id}: eye {c.eye} -> {c.target}')
+    for j in range(20):
+        row = r.zones[j * 20:j * 20 + 20]
+        if any(row):
+            print('  z=%5d ' % (2000 - 200 * j) + ' '.join('##' if v == 99 else (f'{v:2d}' if v else ' .') for v in row))

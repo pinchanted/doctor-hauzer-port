@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline software render of a Doctor Hauzer room, for validating formats and judging HD textures.
 
-usage: render_room.py roomNNN.bin out.png [--cam x y z --at x y z --w 960 --h 544 --fov 60]
+usage: render_room.py roomNNN.bin out.png [--camera N | --cam x y z --at x y z] [--w 960 --h 544 --fov 60]
                       [--group 0] [--skip id ...] [--hd-dir DIR] [--filter nearest|bilinear] [--ssaa 2]
 
 --hd-dir: folder(s) of replacement textures named <hash>.png (hash = sha1 of the CEL bytes, first
@@ -76,16 +76,13 @@ def render(rm, eye, at, W, H, fov, tex_scale=1, skip_ids=(), group=0, hd_dir=Non
     color = np.zeros((H, W, 3), np.float32); color[:] = (16, 16, 20)
     zbuf = np.full((H, W), np.inf)
     quads = []
-    for n, t, vs in rm.shell.faces:
-        if n == 4:
-            quads.append(([rm.shell.verts[i] for i in vs], t, False))
     for o in rm.objects:
-        if o.obj_id in skip_ids or o.group != group:
+        if o.obj_id in skip_ids or o.area != group or not o.visible:
             continue
+        wv = o.world_verts()
         for n, t, vs in o.mesh.faces:
             if n == 4:
-                vv = [tuple(a + b for a, b in zip(o.mesh.verts[i], o.pos)) for i in vs]
-                quads.append((vv, o.bank_tex(t), True))
+                quads.append(([wv[i] for i in vs], o.bank_tex(t), o is not rm.objects[0]))
     uv4 = [(0, 0), (1, 0), (1, 1), (0, 1)]
     for verts, t, is_obj in quads:
         if t is None or not (0 <= t < len(texs)):
@@ -140,10 +137,14 @@ if __name__ == '__main__':
     ap.add_argument('--w', type=int, default=960); ap.add_argument('--h', type=int, default=544)
     ap.add_argument('--fov', type=float, default=60)
     ap.add_argument('--skip', nargs='*', type=int, default=[])
-    ap.add_argument('--group', type=int, default=0)
+    ap.add_argument('--group', '--area', type=int, default=0, help='room area (0 = the room itself)')
+    ap.add_argument('--camera', type=int, default=None, help="use the room's own camera N")
     ap.add_argument('--hd-dir', nargs='*', default=None)
     ap.add_argument('--filter', choices=('nearest', 'bilinear'), default='nearest')
     ap.add_argument('--ssaa', type=int, default=1)
     a = ap.parse_args()
-    render(roomfmt.load(a.room), a.cam, a.at, a.w, a.h, a.fov, 1, set(a.skip), a.group,
+    rm = roomfmt.load(a.room)
+    if a.camera is not None:
+        a.cam, a.at = rm.cameras[a.camera].eye, rm.cameras[a.camera].target
+    render(rm, a.cam, a.at, a.w, a.h, a.fov, 1, set(a.skip), a.group,
            a.hd_dir, a.filter == 'bilinear', a.ssaa).save(a.out)
