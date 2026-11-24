@@ -1,0 +1,188 @@
+/* PC front end (SDL2). Also the headless test harness:
+ *   hauzer --data <extracted/fs> [--hd <assets_hd/textures>] [--room N] [--hz 20]
+ *          [--shot out.png --size 960x544 --input "UP*40,A,B+UP*10"]    (renders one frame and exits)
+ * Keys: arrows = d-pad, Z = A (examine), X = B (run / handle), C = C (jump), Enter = Start,
+ *       Q / W = L / R, PageUp/PageDown = previous/next room, H = toggle HD textures, F12 = screenshot.
+ */
+#include "game.h"
+#include "render.h"
+#include <SDL.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#ifdef _MSC_VER
+#define strtok_r strtok_s
+#define strdup _strdup
+#endif
+
+static const int ROOMS[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211,
+                            213, 301, 302, 303, 304, 305};
+#define NROOMS ((int)(sizeof ROOMS / sizeof ROOMS[0]))
+
+static uint32_t parse_pad(const char *s) {
+    uint32_t pad = 0;
+    char buf[64]; snprintf(buf, sizeof buf, "%s", s);
+    for (char *t = strtok(buf, "+"); t; t = strtok(NULL, "+")) {
+        if (!strcmp(t, "UP")) pad |= PAD_UP; else if (!strcmp(t, "DOWN")) pad |= PAD_DOWN;
+        else if (!strcmp(t, "LEFT")) pad |= PAD_LEFT; else if (!strcmp(t, "RIGHT")) pad |= PAD_RIGHT;
+        else if (!strcmp(t, "A")) pad |= PAD_A; else if (!strcmp(t, "B")) pad |= PAD_B; else if (!strcmp(t, "C")) pad |= PAD_C;
+        else if (!strcmp(t, "R")) pad |= PAD_R; else if (!strcmp(t, "L")) pad |= PAD_L;
+    }
+    return pad;
+}
+
+/* "UP*40,A,B+UP*10" -> runs the ticks */
+static void run_input(Game *g, const char *spec) {
+    char *s = strdup(spec), *save = NULL;
+    for (char *item = strtok_r(s, ",", &save); item; item = strtok_r(NULL, ",", &save)) {
+        int n = 1;
+        char *star = strchr(item, '*');
+        if (star) { *star = 0; n = atoi(star + 1); }
+        uint32_t pad = parse_pad(item);
+        for (int i = 0; i < n; i++) game_tick(g, pad);
+    }
+    free(s);
+}
+
+static uint32_t read_pad(SDL_GameController *gc) {
+    const Uint8 *k = SDL_GetKeyboardState(NULL);
+    uint32_t pad = 0;
+    if (k[SDL_SCANCODE_UP]) pad |= PAD_UP;
+    if (k[SDL_SCANCODE_DOWN]) pad |= PAD_DOWN;
+    if (k[SDL_SCANCODE_LEFT]) pad |= PAD_LEFT;
+    if (k[SDL_SCANCODE_RIGHT]) pad |= PAD_RIGHT;
+    if (k[SDL_SCANCODE_Z]) pad |= PAD_A;
+    if (k[SDL_SCANCODE_X] || k[SDL_SCANCODE_LSHIFT]) pad |= PAD_B;
+    if (k[SDL_SCANCODE_C] || k[SDL_SCANCODE_SPACE]) pad |= PAD_C;
+    if (k[SDL_SCANCODE_RETURN]) pad |= PAD_START;
+    if (k[SDL_SCANCODE_Q]) pad |= PAD_L;
+    if (k[SDL_SCANCODE_W]) pad |= PAD_R;
+    if (gc) {
+        if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_UP)) pad |= PAD_UP;
+        if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_DOWN)) pad |= PAD_DOWN;
+        if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_LEFT)) pad |= PAD_LEFT;
+        if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) pad |= PAD_RIGHT;
+        int ax = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTX), ay = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTY);
+        if (ay < -16000) pad |= PAD_UP;
+        if (ay > 16000) pad |= PAD_DOWN;
+        if (ax < -16000) pad |= PAD_LEFT;
+        if (ax > 16000) pad |= PAD_RIGHT;
+        if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_A)) pad |= PAD_A;
+        if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_X)) pad |= PAD_B;
+        if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_B)) pad |= PAD_C;
+        if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_START)) pad |= PAD_START;
+        if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_LEFTSHOULDER)) pad |= PAD_L;
+        if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) pad |= PAD_R;
+    }
+    return pad;
+}
+
+int main(int argc, char **argv) {
+    const char *data = "extracted/fs", *hd = NULL, *shot = NULL, *input = NULL;
+    int room = 1, hz = 20, w = 1280, h = 720, camera = -1;
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
+        else if (!strcmp(argv[i], "--hd") && i + 1 < argc) hd = argv[++i];
+        else if (!strcmp(argv[i], "--room") && i + 1 < argc) room = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--hz") && i + 1 < argc) hz = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];
+        else if (!strcmp(argv[i], "--input") && i + 1 < argc) input = argv[++i];
+        else if (!strcmp(argv[i], "--camera") && i + 1 < argc) camera = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &w, &h);
+    }
+    if (hz < 1) hz = 20;
+    int gles = getenv("HZ_GLES") != NULL;
+    if (shot && !getenv("SDL_VIDEODRIVER")) { SDL_setenv("SDL_VIDEODRIVER", "offscreen", 1); gles = 1; }
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1; }
+    if (gles) {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+    } else {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+    }
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    if (!shot) { SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1); SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4); }
+    SDL_Window *win = SDL_CreateWindow("Doctor Hauzer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h,
+                                       SDL_WINDOW_OPENGL | (shot ? 0 : SDL_WINDOW_RESIZABLE));
+    if (!win && !shot) {   /* no MSAA available: retry without */
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0); SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
+        win = SDL_CreateWindow("Doctor Hauzer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+    }
+    if (!win) { fprintf(stderr, "window: %s\n", SDL_GetError()); return 1; }
+    SDL_GLContext ctx = SDL_GL_CreateContext(win);
+    if (!ctx) { fprintf(stderr, "GL context: %s\n", SDL_GetError()); return 1; }
+    SDL_GL_SetSwapInterval(1);
+
+    Renderer *rnd = render_create(gles, hd);
+    static Game g;
+    if (!rnd || game_init(&g, data) || game_load_room(&g, room, NULL)) { fprintf(stderr, "init failed (data: %s)\n", data); return 1; }
+    render_set_room(rnd, &g.room);
+    render_set_human(rnd, &g.human);
+
+    if (shot) {
+        if (input) run_input(&g, input);
+        if (camera >= 0 && camera < g.room.ncams) g.camera = camera;
+        CameraView cam;
+        game_view(&g, 1.0f, &cam);
+        render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, w, h);
+        int rc = render_screenshot(w, h, shot);
+        log_msg("player at (%g, %g, %g) ry %g, camera %d -> %s", g.player.pos[0], g.player.pos[1], g.player.pos[2],
+                g.player.ry, g.camera, shot);
+        return rc ? 1 : 0;
+    }
+
+    SDL_GameController *gc = NULL;
+    for (int i = 0; i < SDL_NumJoysticks(); i++) if (SDL_IsGameController(i)) { gc = SDL_GameControllerOpen(i); break; }
+    int ri = 0;
+    for (int i = 0; i < NROOMS; i++) if (ROOMS[i] == room) ri = i;
+    int use_hd = hd != NULL, running = 1, shots = 0;
+    double step = 1.0 / hz, acc = 0;
+    Uint64 last = SDL_GetPerformanceCounter();
+    while (running) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) running = 0;
+            else if (e.type == SDL_CONTROLLERDEVICEADDED && !gc) gc = SDL_GameControllerOpen(e.cdevice.which);
+            else if (e.type == SDL_KEYDOWN && !e.key.repeat) {
+                SDL_Keycode k = e.key.keysym.sym;
+                if (k == SDLK_ESCAPE) running = 0;
+                else if (k == SDLK_PAGEDOWN || k == SDLK_PAGEUP) {
+                    ri = (ri + (k == SDLK_PAGEDOWN ? 1 : NROOMS - 1)) % NROOMS;
+                    game_load_room(&g, ROOMS[ri], rnd);
+                } else if (k == SDLK_h && hd) {
+                    use_hd = !use_hd;
+                    render_destroy(rnd);
+                    rnd = render_create(gles, use_hd ? hd : NULL);
+                    render_set_room(rnd, &g.room); render_set_human(rnd, &g.human);
+                    log_msg("textures: %s", use_hd ? "HD" : "original");
+                } else if (k == SDLK_F12) {
+                    char name[64]; snprintf(name, sizeof name, "hauzer_%03d.png", shots++);
+                    int dw, dh; SDL_GL_GetDrawableSize(win, &dw, &dh);
+                    render_screenshot(dw, dh, name);
+                    log_msg("saved %s", name);
+                }
+            }
+        }
+        Uint64 now = SDL_GetPerformanceCounter();
+        acc += (double)(now - last) / (double)SDL_GetPerformanceFrequency();
+        last = now;
+        if (acc > 0.25) acc = 0.25;
+        uint32_t pad = read_pad(gc);
+        while (acc >= step) { game_tick(&g, pad); acc -= step; }
+        int dw, dh;
+        SDL_GL_GetDrawableSize(win, &dw, &dh);
+        CameraView cam;
+        game_view(&g, (float)(acc / step), &cam);
+        render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, dw, dh);
+        SDL_GL_SwapWindow(win);
+    }
+    render_destroy(rnd);
+    game_free(&g);
+    SDL_GL_DeleteContext(ctx);
+    SDL_DestroyWindow(win);
+    SDL_Quit();
+    return 0;
+}

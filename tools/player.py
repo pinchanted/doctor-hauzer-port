@@ -112,7 +112,8 @@ class Player:
     # -- primitives ------------------------------------------------------------------------------
     def _vec(self, d):
         a = self.ry * 2 * math.pi / 256
-        return (-d * math.sin(a), 0.0, -d * math.cos(a))   # local -z = forward (renderer convention)
+        # the game rotates (0, 0, d) by the actor's angles; forward moves pass d < 0 (model faces -z)
+        return (d * math.sin(a), 0.0, d * math.cos(a))
 
     def _move(self, d, use_x=True, use_z=True):
         vx, _, vz = self._vec(d)

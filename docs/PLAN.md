@@ -114,8 +114,10 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
 
 - **2026-11-24** — Exact camera projection recovered from the code: 256 px focal length on 320×240, with the eye 64 units behind the camera position, giving 50.19° vertical FOV. The renderer now uses it, so shots frame exactly as in the original. Also decoded: room-record fields +0x64/+0x68/+0x6C (billboard flags, draw routine, no-cull). That closes the room format.
 
+- **2026-11-24** — **First engine build** (`engine/`, C + SDL2, one GL path at GLES2 level for PC/Android/Vita). It loads any room from the extracted disc and draws it from the zone cameras at the game's exact projection, with the 4× HD textures (the original CELs remain as fallback, toggled with H). The player walks, runs, turns, jumps and pushes with the original speeds, collision and animations, interpolated at display rate. Examining a door raises the same event the room script listens for. A Windows build is cross-compiled, so no compiler is needed on MELCHIOR: `engine\run_hauzer.bat`.
+
 ## Next steps
 
-1. Start the engine: PC build that loads a room, draws it from the zone camera with HD textures, and runs its script.
+1. Script VM in the engine: run each room's macro (ON handlers, WAIT, CALL, FOR, IF, the named game commands) so doors, cutscenes and room changes work.
 2. Messages: map `MESSAGE` ids to the `mes/` text files, then name the remaining rare commands as the engine needs them.
 3. Calibrate the logic rate (the original has none) against gameplay footage once the PC build runs.
