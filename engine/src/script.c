@@ -1,5 +1,6 @@
 #include "script.h"
 #include "game.h"
+#include "audio.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -218,8 +219,13 @@ static void game_op(Script *s, Game *g, int opc) {
     case 0xfcc8: s->pc = next; suspend(s, (a0 * g->hz + 59) / 60); return;             /* SLEEP vblanks */
     case 0xfcb4: case 0xfcb3: game_fade(g, opc == 0xfcb4, a0); s->pc = next; suspend(s, (a0 * g->hz + 59) / 60); return;   /* FADE_OUT / FADE_IN */
     case 0xfcaa: game_message(g, a0, a1, a2); break;                                   /* MESSAGE */
-    case 0xfca6: log_msg("  SE %d", a0); break;
-    case 0xfca5: log_msg("  BGM %d", a0); break;
+    case 0xfca6: log_msg("  SE %d", a0); audio_system_se(a0); break;              /* SE (fixed table) */
+    case 0xfca5: log_msg("  BGM %d", a0); audio_music(a0); break;                 /* BGM */
+    case 0xfc72: audio_slot_load(a0, a1); break;                                   /* SE_LOAD slot, Geffect n, ? */
+    case 0xfc73: audio_slot_free(a0); break;                                       /* SE_FREE slot (0xb164) */
+    case 0xfc75: audio_slot_play(a0); break;                                       /* SE_PLAY slot (0xb91c) */
+    case 0xfc76: break;                                                            /* SE_WAIT slot (0xb2a0) */
+    case 0xfc7f: g->footstep_slot = a0; break;                                     /* FOOTSTEP slot (0x63f8) */
     case 0xfc7d: { int l = raw_at(s, 0); s->pc = next; if (g->skip_pressed) s->pc = l * 2; return; }  /* IF_SKIP */
     case 0xfca9: g->pending_room = a0; break;                                          /* LOAD_ROOM */
     case 0xfcc6: g->pending_script = a0; break;                                        /* LOAD_SCRIPT */

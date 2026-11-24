@@ -6,6 +6,7 @@
  */
 #include "game.h"
 #include "render.h"
+#include "audio.h"
 #include <SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -149,6 +150,7 @@ int main(int argc, char **argv) {
     text_init(fontf);
     if (!rnd || game_init(&g, data, textf)) { fprintf(stderr, "init failed (data: %s)\n", data); return 1; }
     g.hz = hz;
+    if (!shot) audio_init(g.orgdata);
     render_set_human(rnd, &g.human);
     if (game_load_room(&g, room, rnd)) { fprintf(stderr, "cannot load room %d\n", room); return 1; }
 
@@ -214,6 +216,7 @@ int main(int argc, char **argv) {
         draw_message(rnd, &g, dw, dh);
         SDL_GL_SwapWindow(win);
     }
+    audio_shutdown();
     render_destroy(rnd);
     game_free(&g);
     SDL_GL_DeleteContext(ctx);

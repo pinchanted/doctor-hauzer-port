@@ -34,6 +34,7 @@ typedef struct Game {
     int cam_reset_pending;    /* CAMERA_RESET takes effect when the script run ends (0x4b8c) */
     uint32_t prev_pad;
     int zone_event;
+    int footstep_slot;        /* 0 = default footstep (system SE 0), else effect slot (FC7F, 0x6418) */
     /* screen fades (FADE_OUT / FADE_IN, 0x1a40 / 0x1a8c) and game over (EXIT -> 0xc90) */
     float fade_from, fade_to; int fade_t, fade_n, fade_snap_back;
     int gameover;             /* ticks left of the game-over card; 0 = playing */

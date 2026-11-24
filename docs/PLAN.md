@@ -123,13 +123,17 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
   - **Room 001 end to end:** the intro cutscene (skippable with Start), the falling-chandelier trap on a 30-frame timer, locked-door messages, and the far door's opening cutscene leading into room 002 at the scripted position.
   - **All 29 rooms:** each loads and runs its script without errors.
 
+- **2026-11-24** — Fixed what Aaron saw on the first build: the player stayed hidden after cutscenes, and the camera stayed on the cutscene view. The decoding and additions behind it:
+  - **Per-frame camera and player code:** re-aim only on a zone change or after `CAMERA_RESET`; the body is shown every frame.
+  - **The three view modes on L:** fixed cameras, overhead, first person.
+  - **Rendering:** zone-change events, the object cull and one-sided walls (fixes the rooms that looked into walls), the script-camera angle convention, and close-up faces drawn over the scene as the 3DO did.
+  - **Messages on screen:** Japanese for now, at full resolution with Noto Sans JP; an English file can be swapped in.
+  - **Fades, death and game over:** the chandelier crushes you, then the game-over screen, then a new game.
+  - **Sound effects, footsteps and music.**
+
 ## Next steps
 
-1. Cutscene fidelity:
-   - close-up head actors (handles 50–59, HumanPol meshes 47–56) and face animations (player slots 17+);
-   - the camera-angle convention for scripted cameras;
-   - `EXIT`/death → game over;
-   - rooms 11, 201, 209, 211, 213 end on odd script cameras.
-2. Text: map `MESSAGE` ids to the `mes/` text files and draw them (high-resolution font; English).
-3. Sound effects and music (SDX2 → PCM/Opus), then items/inventory and the Start menu.
+1. Items and inventory, the Start menu and examine pictures (`PICTURE`, the `isearch/` stills, using the 4× upscales).
+2. English text: the fan translation's `mes.scp`, converted to a UTF-8 override (needs the translated disc or patch).
+3. Face animations in cutscenes (player slots 17+), room 211's cutscene camera, FMV (title, game over, ending).
 4. Calibrate the logic rate (the original has none) against gameplay footage, now that the PC build runs.

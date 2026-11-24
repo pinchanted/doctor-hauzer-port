@@ -203,6 +203,29 @@ Overlap: centre distance is less than the sum of half sizes, on every axis.
 
 - **Camera:** the camera is an actor (handle at `0x36698+0x2E8`). `CAMERA n` copies a room camera's eye and target into it and aims it (`0x12C2C` → `0x11B34`).
 
+## Text — `mes/mes.scp` ✅
+- **Format:** Shift-JIS, one message per line, separated by CR. `MESSAGE n` shows line n; line 0 is a dummy.
+  - Ids **400+** come from 32-byte Shift-JIS strings inside launchme at `0x33FEC + (n − 400)·32`, e.g. 400 "this key can't be used here", 401 "no point using it here".
+  - `mes_no.scp` is the same list with line numbers; `MESSAGE*.TXT` are the writers' annotated scripts, grouped by room and object.
+- **Display** (`0x4868` queue / `0x48FC` pop / `0x4A28` per frame): 32 queued (id, time) pairs.
+  - `MESSAGE id, time, 1` clears the queue first; `…, 0` appends.
+  - Each frame the countdown drops by one; at 0 the next pair is popped. Time 0 means the queue is empty and the box closes; id 0 is a pause without text.
+  - Time is counted in rendered frames. The engine scales it assuming about 10 fps.
+
+## Sound ✅
+- **Effects:** `effect/*` are AIFF, 8-bit signed mono at about 11 kHz.
+  - `SE n` plays the fixed table at `0x35598`: 0 `ASHI_YUKA1` (default footstep), 1 `AKERU1` (door opens), 2 `SIMERU1` (door closes), 3 `KETTEI`, 4 `CANCEL`, 5 `SENTAKU` (menu), 6 `ITEMGET`, 7 `SAKEBI` (scream).
+  - Room sounds go through slots:
+    - `SE_LOAD slot, n, ?` loads `effect/Geffect.list` entry n (0-based, CR-separated);
+    - `SE_PLAY slot` (`0xB91C`), `SE_FREE slot` (`0xB164`), `SE_WAIT slot` (`0xB2A0`).
+  - `FOOTSTEP slot` (`0x63F8`) makes footsteps play that slot instead of the default; footsteps fire on fixed animation ticks.
+- **Music:** `music/*.aifc` are stereo 22,050 Hz, AIFC with SDX2 compression.
+  - Each byte b decodes to `b·|b|·2`, added to the previous sample when b is odd.
+  - `BGM n` picks track n from launchme's list: 1–6 `music001`–`006`, 7 `tokei_007`, 8 `inu_008`, 9 `iwa_009`, 10 `mizu_010`, 11 `FUKUROU`, 12 `ending`. 0 = stop. Tracks loop.
+- **End of a room loop** (`0xC90`):
+  - flag `0x32058+0x74` = ending: plays the `stream/EDDS` movie, then the credits;
+  - flag `+0x6C` (`EXIT`) = game over: plays the `stream/GODS` movie, then returns to the title.
+
 ## Scripts — `macro/macroNNN`, `human/macroNNN` ✅ (core) / ✅ 60 game commands named / 🟡 rest
 Decoded from the VM in `launchme` (dispatcher `0xa500`, context struct at `0x35460`). Disassembler: `tools/macro_dis.py`.
 

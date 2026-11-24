@@ -106,9 +106,9 @@ GAME = {
     0xfcaa: 'MESSAGE',        # message id, time, reset   (0x4868: queue of 32 (id, time) pairs)
     0xfca6: 'SE',             # effect                    (0xb8bc: OrgData/effect table)
     0xfc72: 'SE_LOAD',        # slot, effect, ?           (0xb060)
-    0xfc73: 'SE_PLAY',        # slot                      (0xb164)
-    0xfc75: 'SE_STOP',        # slot                      (0xb91c)
-    0xfc76: 'SE_76',          # slot                      (0xb2a0)
+    0xfc73: 'SE_FREE',        # slot                      (0xb164: unload the slot's sample)
+    0xfc75: 'SE_PLAY',        # slot                      (0xb91c: start the slot's sample)
+    0xfc76: 'SE_WAIT',        # slot                      (0xb2a0)
     0xfca5: 'BGM',            # track                     (0xb534: switch music if different)
     0xfcc8: 'SLEEP',          # vblanks                   (0x4fa4 -> timer device)
     0xfcb4: 'FADE_OUT',       # frames                    (0x1a40)
@@ -124,7 +124,7 @@ GAME = {
     0xfcc5: 'EXIT',           # (0x1ae4: end the room loop)
     0xfc60: 'FC60',           # (0x10f4)
     0xfc61: 'SAVE?',          # (0x1114: /nvram)
-    0xfc7f: 'FC7F',           # v                         (0x63f8: 0x32058+0x1c)
+    0xfc7f: 'FOOTSTEP',       # slot                      (0x63f8: footstep sound = this effect slot, 0 = default)
 }
 # comparison codes, from the IF/WHILE jump tables (0x7930 / 0x7cb4; table base = instruction + 8)
 CMP = {0xfcd0: '==', 0xfcd1: '>', 0xfcd2: '<', 0xfcd3: '!=', 0xfcd4: '<=', 0xfcd5: '>='}

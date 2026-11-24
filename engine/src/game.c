@@ -1,4 +1,5 @@
 #include "game.h"
+#include "audio.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -113,6 +114,7 @@ static int load_room_data(Game *g, int room_id, int script_id, int keep_player, 
     g->camera = g->room.ncams > 1 ? 1 : 0;
     g->player_hidden = 0;
     g->cam_reset_pending = 0;
+    g->footstep_slot = 0;
     memset(g->actor, 0, sizeof g->actor);
     memset(g->mq, 0, sizeof g->mq); g->msg_frames = 0; g->msg_shown = 0;
     pick_camera(g);
@@ -209,6 +211,16 @@ void game_tick(Game *g, uint32_t pad) {
     int n = player_tick(&g->player, pad);
     anim_set(&g->anim, g->player.anim);
     anim_step(&g->anim, &g->human);
+    /* footsteps on fixed animation ticks (wrappers 0x5974 / 0x59bc / 0x590c / 0x5a04 / 0x5a44) */
+    {
+        static const struct { int slot, t0, t1, t2, t3; } STEP[] = {{3, 2, 10, -1, -1}, {4, 6, 14, -1, -1}, {6, 0, 4, 8, 12},
+                                                                   {7, 5, 13, -1, -1}, {8, 6, 14, -1, -1}};
+        int t = g->anim.ticks - 1;
+        for (size_t i = 0; i < sizeof STEP / sizeof STEP[0]; i++)
+            if (STEP[i].slot == g->anim.slot && (t == STEP[i].t0 || t == STEP[i].t1 || t == STEP[i].t2 || t == STEP[i].t3)) {
+                if (g->footstep_slot) audio_slot_play(g->footstep_slot); else audio_system_se(0);
+            }
+    }
     script_event(&g->script, g, 2, 0, 0);            /* every frame */
     for (int i = 0; i < n && !g->script.suspended; i++) {
         Event *e = &g->player.events[i];
