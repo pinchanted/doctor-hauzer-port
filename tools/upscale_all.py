@@ -9,6 +9,7 @@ Review:  assets_hd/review/compare.html - all 33 rooms rendered at 1080p (origina
 
 Re-running skips finished work. Reuses results from the upscale test where they exist.
 Options: --no-renders, --workers N
+         --english   only the stills the English fan patch replaced (extracted-en/png -> assets_hd/stills_en)
 """
 import argparse, concurrent.futures as cf, json, os, shutil, sys, time, traceback
 
@@ -37,8 +38,19 @@ def still_id(rel):  # 'isearch/sea01.img.png' -> 'isearch/sea01'
     return rel[:-len('.img.png')] if rel.endswith('.img.png') else rel[:-4]
 
 
-def collect():
+def collect(english=False):
     items = []
+    if english:   # the 54 stills the fan translation re-lettered (examine pages, controls, ending text)
+        src = os.path.join(PROJECT, 'extracted-en', 'png')
+        for root, _, files in os.walk(src):
+            for fn in sorted(files):
+                if fn.endswith('.png'):
+                    rel = os.path.relpath(os.path.join(root, fn), src).replace('\\', '/')
+                    it = T.Item('stills', still_id(rel), os.path.join(root, fn))
+                    it.out = os.path.join(OUT, 'stills_en', still_id(rel) + '.png')
+                    it.reuse = []
+                    items.append(it)
+        return items
     for fn in sorted(os.listdir(TEX_SRC)):
         if fn.endswith('.png'):
             it = T.Item('textures', fn[:-4], os.path.join(TEX_SRC, fn))
@@ -65,6 +77,7 @@ def rooms():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--no-renders', action='store_true')
+    ap.add_argument('--english', action='store_true')
     ap.add_argument('--workers', type=int, default=max(1, min(8, (os.cpu_count() or 4) - 2)))
     a = ap.parse_args()
     os.makedirs(os.path.join(OUT, 'logs'), exist_ok=True)
@@ -80,7 +93,9 @@ def main():
     if not path:
         log('Could not get the model; stopping.'); return 1
 
-    items = collect()
+    items = collect(a.english)
+    if a.english:
+        a.no_renders = True
     todo, reused = [], 0
     for it in items:
         if os.path.exists(it.out):
@@ -122,6 +137,10 @@ def main():
         del desc
         if device == 'cuda':
             torch.cuda.empty_cache()
+
+    if a.english:
+        log(f'English stills done -> {os.path.join(OUT, "stills_en")} ({(time.time() - t_start) / 60:.1f} min)')
+        return 0
 
     # ---- review: every room, original textures vs HD, 1080p
     room_ids = rooms()
