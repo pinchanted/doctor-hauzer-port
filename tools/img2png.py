@@ -13,11 +13,24 @@ def rgb(p):
     r, g, b = (p >> 10) & 31, (p >> 5) & 31, p & 31
     return (r << 3 | r >> 2, g << 3 | g >> 2, b << 3 | b >> 2)
 
+def cel_header(d):
+    """A full-screen picture stored as a CEL (the English fan patch writes its stills this way):
+    16-bit uncoded, unpacked, LRform (PRE1 bit 11). Returns (w, h, bytes per row pair, bpp, order)."""
+    c = d.find(b'CCB '); assert c >= 0, 'no IMAG or CCB chunk'
+    body = c + 8
+    pre0, pre1, w, h = struct.unpack_from('>IIII', d, body + 56)
+    bpp = {6: 16}.get(pre0 & 7, 0)
+    lr = (pre1 >> 11) & 1
+    return w, h, w * 4 if lr else w * 2, bpp, 1 if lr else 0
+
 def convert(src, dst):
     d = open(src, 'rb').read()
-    i = d.find(b'IMAG'); assert i >= 0, 'no IMAG chunk'
-    w, h, bpr = struct.unpack_from('>III', d, i + 8)
-    bpp, ncomp, planar, cspace, comp, hv, order = d[i + 20:i + 27]
+    i = d.find(b'IMAG')
+    if i >= 0:
+        w, h, bpr = struct.unpack_from('>III', d, i + 8)
+        bpp, ncomp, planar, cspace, comp, hv, order = d[i + 20:i + 27]
+    else:
+        w, h, bpr, bpp, order = cel_header(d)
     p = d.find(b'PDAT'); pix = d[p + 8:]
     assert bpp == 16, f'bpp {bpp}'
     rows = []

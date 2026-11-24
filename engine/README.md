@@ -23,7 +23,7 @@ Keys: arrows = d-pad · Z = A (examine) · X / Shift = B (run, push/pull) · C /
 Enter = Start (skips cutscenes) · **Q = L: change view (fixed cameras / overhead / first person)** · W = R · **PageUp / PageDown = previous / next room** · **H = HD / original
 textures** · F12 = screenshot · Esc = quit. A game controller works too (A examine, X run, B jump).
 
-Options: `--text file.txt` (UTF-8, one message per line, e.g. an English translation), `--room N`, `--hz N` (logic rate, default 20 - the original had no fixed rate),
+Options: `--text file.txt` (UTF-8, one message per line; default `text/mes_en.txt` beside the exe, made by `tools/make_text_en.py` from the English fan-translation disc), `--jp` (original Japanese text), `--room N`, `--hz N` (logic rate, default 20 - the original had no fixed rate),
 `--size WxH`, `--camera N`.
 
 ## Build
@@ -32,7 +32,7 @@ Options: `--text file.txt` (UTF-8, one message per line, e.g. an English transla
 - Headless test: `SDL_VIDEODRIVER=offscreen ./hauzer --data … --shot out.png --input "UP*30,A"`.
 
 ## Not yet
-Sound effects and music, FMV (game-over / ending movies), items and the Start menu, English text.
+FMV (title, game-over and ending movies), items and the Start menu, examine pictures, face animations in cutscenes.
 
 ## Fonts
 `./fetch_assets.sh` downloads Noto Sans JP (SIL OFL 1.1) into `assets/fonts/`; the Windows build ships it in `fonts/`.

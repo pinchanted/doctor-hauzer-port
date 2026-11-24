@@ -99,7 +99,7 @@ static uint32_t read_pad(SDL_GameController *gc) {
 
 int main(int argc, char **argv) {
     const char *data = "extracted/fs", *hd = NULL, *shot = NULL, *input = NULL, *textf = NULL, *fontf = NULL;
-    int room = 1, hz = 20, w = 1280, h = 720, camera = -1;
+    int room = 1, hz = 20, w = 1280, h = 720, camera = -1, jp = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
         else if (!strcmp(argv[i], "--hd") && i + 1 < argc) hd = argv[++i];
@@ -111,6 +111,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &w, &h);
         else if (!strcmp(argv[i], "--text") && i + 1 < argc) textf = argv[++i];
         else if (!strcmp(argv[i], "--font") && i + 1 < argc) fontf = argv[++i];
+        else if (!strcmp(argv[i], "--jp")) jp = 1;
     }
     if (hz < 1) hz = 20;
     int gles = getenv("HZ_GLES") != NULL;
@@ -148,6 +149,15 @@ int main(int argc, char **argv) {
         fontf = fontbuf;
     }
     text_init(fontf);
+    /* English by default when the converted fan translation is present (tools/make_text_en.py) */
+    char textbuf[1200];
+    if (!textf && !jp) {
+        char *base = SDL_GetBasePath();
+        path_join(textbuf, sizeof textbuf, base ? base : ".", "text/mes_en.txt");
+        if (base) SDL_free(base);
+        FILE *tf = fopen(textbuf, "rb");
+        if (tf) { fclose(tf); textf = textbuf; }
+    }
     if (!rnd || game_init(&g, data, textf)) { fprintf(stderr, "init failed (data: %s)\n", data); return 1; }
     g.hz = hz;
     if (!shot) audio_init(g.orgdata);
