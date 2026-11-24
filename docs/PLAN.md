@@ -131,9 +131,14 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
   - **Fades, death and game over:** the chandelier crushes you, then the game-over screen, then a new game.
   - **Sound effects, footsteps and music.**
 
+- **2026-11-24** — **English.**
+  - **What the fan translation changes:** compared with the original disc, the patch (ArcaneAria v1.0) changes the text and 54 stills; launchme is untouched.
+  - **Text:** `tools/make_text_en.py` turns its all-caps text into sentence case for the engine's font, and adds English for the two messages the patch missed (ids 400/401, which live in the exe). The engine shows English by default (`--jp` for Japanese).
+  - **Stills:** the patched stills (examine pages, controls, ending text) are stored as CELs, not IMAG. `img2png.py` now reads both, and `tools/upscale_english.bat` upscales them into `assets_hd/stills_en`.
+
 ## Next steps
 
 1. Items and inventory, the Start menu and examine pictures (`PICTURE`, the `isearch/` stills, using the 4× upscales).
-2. English text: the fan translation's `mes.scp`, converted to a UTF-8 override (needs the translated disc or patch).
+2. Re-letter the English examine pages at full resolution: an AI-upscaled paper background with the text drawn by the engine, rather than upscaled 320×240 lettering.
 3. Face animations in cutscenes (player slots 17+), room 211's cutscene camera, FMV (title, game over, ending).
 4. Calibrate the logic rate (the original has none) against gameplay footage, now that the PC build runs.
