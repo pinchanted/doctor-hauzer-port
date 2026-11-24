@@ -131,5 +131,5 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
    - `EXIT`/death → game over;
    - rooms 11, 201, 209, 211, 213 end on odd script cameras.
 2. Text: map `MESSAGE` ids to the `mes/` text files and draw them (high-resolution font; English).
-4. Sound effects and music (SDX2 → PCM/Opus), then items/inventory and the Start menu.
-3. Calibrate the logic rate (the original has none) against gameplay footage once the PC build runs.
+3. Sound effects and music (SDX2 → PCM/Opus), then items/inventory and the Start menu.
+4. Calibrate the logic rate (the original has none) against gameplay footage, now that the PC build runs.
