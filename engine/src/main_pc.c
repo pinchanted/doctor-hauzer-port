@@ -27,6 +27,7 @@ static uint32_t parse_pad(const char *s) {
         else if (!strcmp(t, "LEFT")) pad |= PAD_LEFT; else if (!strcmp(t, "RIGHT")) pad |= PAD_RIGHT;
         else if (!strcmp(t, "A")) pad |= PAD_A; else if (!strcmp(t, "B")) pad |= PAD_B; else if (!strcmp(t, "C")) pad |= PAD_C;
         else if (!strcmp(t, "R")) pad |= PAD_R; else if (!strcmp(t, "L")) pad |= PAD_L;
+        else if (!strcmp(t, "START")) pad |= PAD_START;
     }
     return pad;
 }
@@ -118,9 +119,10 @@ int main(int argc, char **argv) {
 
     Renderer *rnd = render_create(gles, hd);
     static Game g;
-    if (!rnd || game_init(&g, data) || game_load_room(&g, room, NULL)) { fprintf(stderr, "init failed (data: %s)\n", data); return 1; }
-    render_set_room(rnd, &g.room);
+    if (!rnd || game_init(&g, data)) { fprintf(stderr, "init failed (data: %s)\n", data); return 1; }
+    g.hz = hz;
     render_set_human(rnd, &g.human);
+    if (game_load_room(&g, room, rnd)) { fprintf(stderr, "cannot load room %d\n", room); return 1; }
 
     if (shot) {
         if (input) run_input(&g, input);
@@ -129,8 +131,8 @@ int main(int argc, char **argv) {
         game_view(&g, 1.0f, &cam);
         render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, w, h);
         int rc = render_screenshot(w, h, shot);
-        log_msg("player at (%g, %g, %g) ry %g, camera %d -> %s", g.player.pos[0], g.player.pos[1], g.player.pos[2],
-                g.player.ry, g.camera, shot);
+        log_msg("room %03d area %d: player at (%g, %g, %g) ry %g, camera %d (mode %d) -> %s", g.room_id, g.area,
+                g.player.pos[0], g.player.pos[1], g.player.pos[2], g.player.ry, g.camera, g.cam_mode, shot);
         return rc ? 1 : 0;
     }
 
@@ -156,6 +158,7 @@ int main(int argc, char **argv) {
                     use_hd = !use_hd;
                     render_destroy(rnd);
                     rnd = render_create(gles, use_hd ? hd : NULL);
+                    g.renderer = rnd;
                     render_set_room(rnd, &g.room); render_set_human(rnd, &g.human);
                     log_msg("textures: %s", use_hd ? "HD" : "original");
                 } else if (k == SDLK_F12) {

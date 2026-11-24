@@ -219,7 +219,7 @@ A script is a stream of big-endian `(tag, value)` int32 pairs ("tokens"):
 
 The dispatcher executes opcode tokens and skips every other token, so assignments are infix: `<var> <op> <expr>`. Every opcode's token count comes from its handler's script-counter increment (`ARITY` in the tool). 133 opcodes in all.
 
-**Execution model:** a block of `DEF var = n` runs at load (before `BEGIN`). Then the script registers event handlers: `ON (event) GOTO L` (`0xFC08`, one-value events such as 1 = room entered, 2 = every frame) and `ON (type, object, param) GOTO L` (`0xFC11`, e.g. `(41, 2, 0)`). It runs until `WAIT` (`0xFC02`) yields the frame. Call stack: 32 entries.
+**Execution model (from `0x6EB4` / `0xA500`):** every event — `FireEvent(a, b, c)` — restarts the script from the top. While not started only `DEF` and `BEGIN` execute, so the locals are re-initialised each time; then the `ON` lines act as a switch on the event and `WAIT` ends the run. Globals (`0x3D308`, 256) and 32 flags (`0x3D788`) persist. Events: `(1)` room entered, `(2)` every frame, `(t, 1, 0)` floor trigger, `(t, 2, 0)` examine, `(t, 3, item)` use item. `FOR v, a, b, s` … `NEXT` exits when `v + s == b`; `MARK` … `WHILE a cmp b` loops back while true; assignments write the token before the opcode; comparison codes `FCD0–D5` are `== > < != <= >=` (jump table base = instruction + 8). Previously: a block of `DEF var = n` runs at load (before `BEGIN`). Then the script registers event handlers: `ON (event) GOTO L` (`0xFC08`, one-value events such as 1 = room entered, 2 = every frame) and `ON (type, object, param) GOTO L` (`0xFC11`, e.g. `(41, 2, 0)`). It runs until `WAIT` (`0xFC02`) yields the frame. Call stack: 32 entries.
 
 | Opcode | Name | Opcode | Name |
 |---|---|---|---|
@@ -227,12 +227,12 @@ The dispatcher executes opcode tokens and skips every other token, so assignment
 | FC02 | WAIT (yield frame) | FC0E | NEXT |
 | FC03 | GOTO label | FC0F | MARK (save resume point) |
 | FC04 | PRINT (debug) | FC10 | WHILE |
-| FC05 | IF a cmp b label (jumps when true) | FC11 | ON (type, object, param) GOTO |
-| FC06 | DEF var = const | FCC1/C2/C3 | FlagOn / FlagOff / flag op |
-| FC08 | ON event GOTO | FCD0–D5 | `>=  ==  >  <  !=  <=` |
+| FC05 | IF a cmp b label (jumps when true) | FC11 | ON (a, b, c) GOTO: exact event match |
+| FC06 | DEF var = const | FCC1/C2/C3 | FLAG_ON n / FLAG_OFF n / IF_FLAG n, L |
+| FC08 | ON v GOTO: event's first value == v | FCD0–D5 | `==  >  <  !=  <=  >=` |
 | FC09 / FC0A | CALL label / RETURN | FCE0–E7 | `= += -= *= /= %= ++ --` |
 
-**Game commands.** The 60 most used commands (about 95% of game-command uses) are named in `GAME` in `tools/macro_dis.py`, from tracing each handler into its callee. Actors are handles into the 56-byte actor table at `0x58AA0` (room objects are 100+).
+**Game commands.** The 60 most used commands (about 95% of game-command uses) are named in `GAME` in `tools/macro_dis.py`, from tracing each handler into its callee. Actors are handles into the 56-byte actor table at `0x58AA0`: 0 camera, 1 player body, 2 blend snapshot, 3–49 body poses, 50–59 close-up heads, 60 in-game head, 61+ hands/panels/items, 100+ room objects (assigned explicitly by the loader at `0x3480`).
 
 | Offset | Actor field |
 |---|---|

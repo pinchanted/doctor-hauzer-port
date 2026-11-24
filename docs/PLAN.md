@@ -116,8 +116,20 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
 
 - **2026-11-24** — **First engine build** (`engine/`, C + SDL2, one GL path at GLES2 level for PC/Android/Vita). It loads any room from the extracted disc and draws it from the zone cameras at the game's exact projection, with the 4× HD textures (the original CELs remain as fallback, toggled with H). The player walks, runs, turns, jumps and pushes with the original speeds, collision and animations, interpolated at display rate. Examining a door raises the same event the room script listens for. A Windows build is cross-compiled, so no compiler is needed on MELCHIOR: `engine\run_hauzer.bat`.
 
+- **2026-11-24** — **Room scripts run in the engine.** The VM is ported from the exe, and decoding it showed how the original works:
+  - **Events:** every event (room entered, every frame, floor trigger, examine, use item) restarts the room script from the top, and the `ON` lines act as a switch on the event.
+  - **Cutscenes:** cutscene loops draw their own frames, so the VM suspends on `DRAW` and resumes next frame.
+  - **Disassembler fix:** the comparison table was shifted by one, now corrected; e.g. "skip the intro once it has played" now reads correctly.
+  - **Room 001 end to end:** the intro cutscene (skippable with Start), the falling-chandelier trap on a 30-frame timer, locked-door messages, and the far door's opening cutscene leading into room 002 at the scripted position.
+  - **All 29 rooms:** each loads and runs its script without errors.
+
 ## Next steps
 
-1. Script VM in the engine: run each room's macro (ON handlers, WAIT, CALL, FOR, IF, the named game commands) so doors, cutscenes and room changes work.
-2. Messages: map `MESSAGE` ids to the `mes/` text files, then name the remaining rare commands as the engine needs them.
+1. Cutscene fidelity:
+   - close-up head actors (handles 50–59, HumanPol meshes 47–56) and face animations (player slots 17+);
+   - the camera-angle convention for scripted cameras;
+   - `EXIT`/death → game over;
+   - rooms 11, 201, 209, 211, 213 end on odd script cameras.
+2. Text: map `MESSAGE` ids to the `mes/` text files and draw them (high-resolution font; English).
+4. Sound effects and music (SDX2 → PCM/Opus), then items/inventory and the Start menu.
 3. Calibrate the logic rate (the original has none) against gameplay footage once the PC build runs.

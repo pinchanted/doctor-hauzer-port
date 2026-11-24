@@ -30,9 +30,9 @@ CORE = {
     0xfc0f: ('MARK', 0, False),       # save resume point
     0xfc10: ('WHILE', None, False),
     0xfc11: ('ON3', 4, False),        # ON (type, object, param) GOTO label
-    0xfcc1: ('FLAG_ON', None, False),
+    0xfcc1: ('FLAG_ON', None, False),   # flag n = 1 (32 flags at 0x3d788)
     0xfcc2: ('FLAG_OFF', None, False),
-    0xfcc3: ('FLAG_3', None, False),
+    0xfcc3: ('IF_FLAG', None, False),   # n, label: jump when flag n is set
     0xfce0: ('=', 1, True),
     0xfce1: ('+=', 1, True),
     0xfce2: ('-=', 1, True),
@@ -126,7 +126,8 @@ GAME = {
     0xfc61: 'SAVE?',          # (0x1114: /nvram)
     0xfc7f: 'FC7F',           # v                         (0x63f8: 0x32058+0x1c)
 }
-CMP = {0xfcd0: '>=', 0xfcd1: '==', 0xfcd2: '>', 0xfcd3: '<', 0xfcd4: '!=', 0xfcd5: '<='}
+# comparison codes, from the IF/WHILE jump tables (0x7930 / 0x7cb4; table base = instruction + 8)
+CMP = {0xfcd0: '==', 0xfcd1: '>', 0xfcd2: '<', 0xfcd3: '!=', 0xfcd4: '<=', 0xfcd5: '>='}
 
 
 def tokens(data):
