@@ -70,7 +70,7 @@ Verified against `launchme`: loader `0x148dc`, object builder `0x149dc`, collisi
 
 | Meshes | Content |
 |---|---|
-| 0–46 | full-body poses (vertex animation; 91 verts / 96 faces each): idle, walk, run, fall/death |
+| 0–46 | full-body poses (vertex animation; 91 verts / 96 faces each), sequenced by the animation table below |
 | 47–56 | close-up heads with expressions (cutscenes); 49 back of head, 50 hair |
 | 57 | in-game head (51 verts) |
 | 58 / 59 | left / right hand |
@@ -80,6 +80,52 @@ Verified against `launchme`: loader `0x148dc`, object builder `0x149dc`, collisi
 **Rigid parts on a vertex-animated body:** every body pose has three thin marker triangles (verts 62–64 left hand, 65–67 right hand, 68–70 head; table entry 14) giving *(attach point, forward, up)*. The engine places the head/hand meshes on them each frame: local +x → right, +y → −up, +z → −forward. Implemented in `tools/human.py`.
 
 **Texture tables** for the player and item meshes live in `launchme`'s data (`0x322FC`–`0x32BFC` player, `0x32BFC`+ items): 16 `(type, value)` pairs per mesh. Type 1 = room texture bank (rooms convert their single-word tables to this), **2 = `HumanTex.bin`**, **3 = `ItemTex.bin`**, 4 = TBD, 0 = none. Mesh → table mapping from the loader at `0x3480` (`TABLE_FOR_MESH`).
+
+### Player animations ✅
+Defined in code, not in a file: `sub_03db4` builds 17 animation slots of 0x3C bytes at `0x3B960`. Pose handles are HumanPol mesh numbers (the loader puts mesh *k* in slot *k* of the handle array at `0x3C4A0`).
+
+| Offset | Field |
+|---|---|
+| +0x00 | target mesh (the live body that is drawn) |
+| +0x04 | `shift`: each key-to-key segment lasts 2^shift ticks |
+| +0x08 | active flag |
+| +0x0C | tick count since start or last loop (footstep sounds key off this) |
+| +0x10 | current key index |
+| +0x14 | `t`, 0 … 2^shift − 1 |
+| +0x18 | loop index: the key to jump back to at the −1 terminator |
+| +0x1C | key 0: a snapshot of the pose at the moment of switching |
+| +0x20… | keys 1…: body poses, −1 terminated |
+
+- **Switching** (`sub_043ec`, SetPlayerAnim): if the slot changes, copy the live body into the snapshot and reset the counters. Every change cross-fades from wherever the body was. The cross-fade segment runs at double speed.
+- **Stepping** (`sub_04488`, once per tick): linear per-vertex blend between the current and next key (`sub_16068`). Wraps to the loop index, so key 1 (and key 2 where loop = 3) is a one-time lead-in.
+
+| Slot | Name | Ticks/key | Loop → | Poses |
+|---|---|---|---|---|
+| 0 | idle | 16 | 2 | 1 1 2 1 3 |
+| 1 | step | 8 | 1 | 4 5 |
+| 2 | idle_b | 16 | 2 | 1 1 2 1 3 |
+| 3 | walk | 4 | 1 | 7 8 9 6 |
+| 4 | walk_back | 4 | 1 | 6 9 8 7 |
+| 5 | jog | 4 | 3 | 4 10 11 12 44 8 |
+| 6 | run | 2 | 1 | 13 14 15 16 |
+| 7 | push | 4 | 2 | 21 17 18 19 20 |
+| 8 | climb | 4 | 1 | 22 24 23 25 |
+| 9 | pose_27 | 8 | 2 | 27 27 27 |
+| 10 | pose_30 | 8 | 1 | 30 30 |
+| 11 | pose_31 | 8 | 1 | 31 31 |
+| 12 | reach | 4 | 1 | 32 33 34 |
+| 13 | collapse | 16 | 1 | 35 36 37 38 39 |
+| 14 | sidestep | 4 | 1 | 40 41 42 43 |
+| 15 | pose_28 | 8 | 2 | 28 28 28 |
+| 16 | pose_29 | 8 | 2 | 29 29 29 |
+
+**Which names are confirmed:** walk, walk_back, jog and run are confirmed by code. Their wrappers (`0x5974`, `0x59BC`, `0x5A04`, `0x590C`) fire `sub_06418` (likely the footstep sound) on fixed ticks. The other names come from the poses and are tentative.
+
+**Callers:** the movement state machine `0x5AA4` selects slots 3, 4, 5, 7, 8, 9, 15 and 16; `0x5578` selects slot 1.
+
+**Implementation:** `tools/anim.py` holds the table, a faithful stepper (`Player`) and `strips` (a contact sheet of each animation's keys).
+
+**Port note:** the engine should blend in floating point at the display rate (60 fps). The integer `t >> shift` steps of the original then become smooth motion.
 
 `RGB.bin` is a "mato" (*matome*, bundle) file: three tables of 16 RGB colours (5-bit), not used by the textured player; purpose TBD (likely lighting or effect colours).
 

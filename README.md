@@ -24,6 +24,7 @@ No game data is in this repository. The tools extract and rebuild every asset fr
 | `tools/macro_dis.py --dir <OrgData> --out <dir>` | Disassembles all 45 room/event scripts into readable listings. |
 | `tools/armanalyze.py launchme --funcs/--xref/--dis` | Function finder, string cross-references and annotated disassembly for the 3DO executable. |
 | `tools/human.py <human dir> <launchme> <out.png>` | Player model: all 69 meshes, texture tables from the executable, head/hands attached per pose (`Model.assembled`, `Model.into_room`). |
+| `tools/anim.py strips <human dir> <launchme> <out.png>` | Player animation table (17 slots decoded from the exe), a faithful stepper/blender, and a pose-strip contact sheet. |
 | `tools/upscale_all.bat` | Production upscale of every texture and still with the chosen model (`docs/UPREZ.md`), plus a 33-room before/after review page. |
 | `tools/upscale_test/run_upscale_test.bat` | One-click upscaler comparison: 9 models × 3 pre-passes, room renders, HTML viewer. See its README. |
 
