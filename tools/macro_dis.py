@@ -64,6 +64,68 @@ ARITY = {
 }
 # opcodes whose handler reads the variable token just before them (result goes there)
 LHS_OPS = {0xfc63, 0xfc64, 0xfc65, 0xfc7b, 0xfc7c, 0xfc8d, 0xfc8e, 0xfc8f, 0xfcb7, 0xfcb8, 0xfcb9, 0xfcba, 0xfcbb, 0xfcbc, 0xfce0, 0xfce1, 0xfce2, 0xfce3, 0xfce4, 0xfce5, 0xfce6, 0xfce7}
+# game commands, named from their handlers (handler -> callee in launchme; docs/FORMATS.md has the
+# reasoning). Actor = handle into the 56-byte actor table at 0x58aa0 (room objects are 100+).
+GAME = {
+    0xfca3: 'SET_POS',        # actor, x, y, z            (0x14bf0: actor +4/+8/+0xc = v << 16)
+    0xfca4: 'SET_ROT',        # actor, rx, ry, rz         (0x14c18, 256 units per turn)
+    0xfca0: 'ADD_POS',        # actor, dx, dy, dz         (0x14c74)
+    0xfca1: 'ADD_ROT',        # actor, drx, dry, drz      (0x14c40)
+    0xfcbd: 'SHOW',           # actor                     (0x14bc0: actor +0 = 1)
+    0xfcbe: 'HIDE',           # actor                     (0x14bd8: actor +0 = 0)
+    0xfc93: 'ACTOR_FLAG',     # actor, v                  (0x103ec: actor +0x2c, meaning TBD)
+    0xfcc9: 'ACTOR_AREA',     # actor, area               (0x10388: actor +0x30)
+    0xfca2: 'AREA',           # area                      (0x1037c: current area 0x36698)
+    0xfcca: 'PLAYER_AREA',    # area                      (0x1c70: body, head, hands)
+    0xfcae: 'MOVE_FWD',       # actor, distance           (0x1256c)
+    0xfcc7: 'PLAYER_POS',     # x, y, z                   (0x2688)
+    0xfcb7: 'GET_X',          # var = GET_X(actor)        (0x14fbc)
+    0xfcb8: 'GET_Y',          # (0x14fd0)
+    0xfcb9: 'GET_Z',          # (0x14fe4)
+    0xfc97: 'LOOK_AT',        # actor, target actor, k    (0x119d8: sets rx, ry by atan2)
+    0xfc98: 'LOOK_AT_POINT',  # actor, x, y, z, k         (0x11be4)
+    0xfc95: 'NO_COLLIDE',     # actor                     (0x111b4: volume type = 0)
+    0xfc7e: 'IF_TOUCH',       # actor a, actor b, label   (0x10ea4 -> AABB overlap)
+    0xfcb1: 'PLAYER_ANIM',    # slot                      (0x43ec SetPlayerAnim, cross-fades)
+    0xfc9b: 'PLAYER_ANIM_CUT',  # (0x43cc: switch without the cross-fade snapshot)
+    0xfcb2: 'PLAYER_ANIM_STEP',  # (0x4488 on the player animation)
+    0xfc9a: 'DEF_PLAYER_ANIM',  # slot, shift, loop, keys...   (0x4358 into 0x3b960)
+    0xfc8c: 'OBJ_ANIM',       # slot                      (0x4330: 0x3c0e0 table)
+    0xfc8a: 'OBJ_ANIM_STEP',  # (0x4488 on the object animation)
+    0xfc89: 'DEF_OBJ_ANIM',   # slot, target, shift, loop, keys...  (0x42b4)
+    0xfcaf: 'ATTACH_PARTS',   # (0x526c: head and held item onto the body markers)
+    0xfc9c: 'HOLD',           # mesh handle               (0x3d24: swap the hand mesh)
+    0xfc85: 'SHOW_PLAYER',    # (0x25c4)
+    0xfc86: 'HIDE_PLAYER',    # (0x2608)
+    0xfca7: 'DRAW',           # render one frame          (0x2214 -> 0x26a0)
+    0xfca8: 'DRAW_B',         # (0x2238 -> 0x26a0, mode from 0x32058+0x78)
+    0xfc9e: 'DRAW_ROOM',      # (0x2280: room only)
+    0xfc87: 'CLEAR',          # (0x4f88)
+    0xfc78: 'CAMERA',         # camera id                 (0x4b4c -> 0x12c2c: room camera table)
+    0xfcab: 'CAMERA_RESET',   # (0x4d8c: current camera = -1, re-picked from the zone)
+    0xfcaa: 'MESSAGE',        # message id, time, reset   (0x4868: queue of 32 (id, time) pairs)
+    0xfca6: 'SE',             # effect                    (0xb8bc: OrgData/effect table)
+    0xfc72: 'SE_LOAD',        # slot, effect, ?           (0xb060)
+    0xfc73: 'SE_PLAY',        # slot                      (0xb164)
+    0xfc75: 'SE_STOP',        # slot                      (0xb91c)
+    0xfc76: 'SE_76',          # slot                      (0xb2a0)
+    0xfca5: 'BGM',            # track                     (0xb534: switch music if different)
+    0xfcc8: 'SLEEP',          # vblanks                   (0x4fa4 -> timer device)
+    0xfcb4: 'FADE_OUT',       # frames                    (0x1a40)
+    0xfcb3: 'FADE_IN',        # frames                    (0x1a8c)
+    0xfcb0: 'PICTURE',        # image                     (0x6ce8 + 0x19b4: full-screen still)
+    0xfc7d: 'IF_SKIP',        # label: Start or X pressed (0x5538)
+    0xfc88: 'WAIT_RELEASE',   # (0xc470)
+    0xfc99: 'ITEM_SLOT',      # item                      (0xe424: inventory index)
+    0xfcc0: 'IF_ITEM',        # item, label               (0xe398: item in inventory)
+    0xfcc4: 'ITEM_SCREEN',    # item, label               (0xecd4)
+    0xfca9: 'LOAD_ROOM',      # room                      (0x6da0 + 0x148dc)
+    0xfcc6: 'LOAD_SCRIPT',    # room                      (0x6d80 + 0x6f94)
+    0xfcc5: 'EXIT',           # (0x1ae4: end the room loop)
+    0xfc60: 'FC60',           # (0x10f4)
+    0xfc61: 'SAVE?',          # (0x1114: /nvram)
+    0xfc7f: 'FC7F',           # v                         (0x63f8: 0x32058+0x1c)
+}
 CMP = {0xfcd0: '>=', 0xfcd1: '==', 0xfcd2: '>', 0xfcd3: '<', 0xfcd4: '!=', 0xfcd5: '<='}
 
 
@@ -109,7 +171,7 @@ def disassemble(data):
                 lines.append((None, '    ; skipped: ' + ' '.join(fmt(x) for x in pending)))
             pending = []; i += 1
             continue
-        name, nargs, lhs = CORE.get(v, (f'op_{v:x}', None, False))
+        name, nargs, lhs = CORE.get(v, (GAME.get(v, f'op_{v:x}'), None, False))
         if ARITY.get(v) is not None:
             nargs = ARITY[v]
         lhs = lhs or v in LHS_OPS

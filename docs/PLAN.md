@@ -110,8 +110,10 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
 
 - **2026-11-24** — Player control decoded end to end. That covers the full button map, all 16 movement states (walk/run/turn speeds, jump, push/pull blocks, examine, use item), wall-sliding collision, and how examine and floor triggers raise the script's `ON` events. `tools/player.py` simulates it in real rooms. In room 001, walking into the door and pressing A raises exactly the event the script listens for. The original has no fixed frame rate (one tick per rendered frame), so the port gets a configurable logic rate.
 
+- **2026-11-24** — 60 script game commands named from their handlers, covering about 95% of uses: actor position/rotation/visibility, area and camera switching, frame drawing, player and object animation, messages, sound and music, fades and stills, items, and room/script loading. The room scripts now read as plain cutscene and puzzle logic. Areas and cameras turn out to be script-driven in cutscenes and zone-driven in normal play.
+
 ## Next steps
 
-1. Name the game commands (`0xFC60–0xFCCF`), starting with the most frequent; find what sets the current area and camera.
-2. Camera field of view / projection from the renderer (`0x12ee4` → `0x13c50` / `0x14118`), checked against gameplay footage; calibrate the logic rate from the same footage.
-3. Start the engine: PC build that loads a room, draws it from the zone camera with HD textures, and runs its script.
+1. Camera field of view / projection from the renderer (`0x12ee4` → `0x13c50` / `0x14118`), checked against gameplay footage; calibrate the logic rate from the same footage.
+2. Start the engine: PC build that loads a room, draws it from the zone camera with HD textures, and runs its script.
+3. Messages: map `MESSAGE` ids to the `mes/` text files, then name the remaining rare commands as the engine needs them.

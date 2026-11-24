@@ -187,7 +187,7 @@ Overlap: centre distance is less than the sum of half sizes, on every axis.
 
 `RGB.bin` is a "mato" (*matome*, bundle) file: three tables of 16 RGB colours (5-bit), not used by the textured player; purpose TBD (likely lighting or effect colours).
 
-## Scripts — `macro/macroNNN`, `human/macroNNN` ✅ (core) / 🟡 (game commands)
+## Scripts — `macro/macroNNN`, `human/macroNNN` ✅ (core) / ✅ 60 game commands named / 🟡 rest
 Decoded from the VM in `launchme` (dispatcher `0xa500`, context struct at `0x35460`). Disassembler: `tools/macro_dis.py`.
 
 A script is a stream of big-endian `(tag, value)` int32 pairs ("tokens"):
@@ -216,7 +216,30 @@ The dispatcher executes opcode tokens and skips every other token, so assignment
 | FC08 | ON event GOTO | FCD0–D5 | `>=  ==  >  <  !=  <=` |
 | FC09 / FC0A | CALL label / RETURN | FCE0–E7 | `= += -= *= /= %= ++ --` |
 
-Game commands `0xFC60–0xFCCF` (~100) are unnamed so far. Getters that write the preceding variable: FC63–65, FC7B–7C, FC8D–8F, FCB7–BC. Names will come from tracing each handler, starting with the frequent ones (`FCA3`/`FCA4`/`FCA0`/`FCA1` with `(var, x, y, z)`: likely actor/camera move or position; `FCAA` (3 ints, 491 uses); `FCA7`/`FCAF`/`FCB2`: 0-operand, very frequent).
+**Game commands.** The 60 most used commands (about 95% of game-command uses) are named in `GAME` in `tools/macro_dis.py`, from tracing each handler into its callee. Actors are handles into the 56-byte actor table at `0x58AA0` (room objects are 100+).
+
+| Offset | Actor field |
+|---|---|
+| +0 | visible |
+| +4…+0xC | position (16.16) |
+| +0x10…+0x18 | rotation (16.16, 256 per turn) |
+| +0x2C | flag (TBD) |
+| +0x30 | area |
+
+| Group | Commands |
+|---|---|
+| Actors | `SET_POS`/`SET_ROT` actor,x,y,z · `ADD_POS`/`ADD_ROT` · `SHOW`/`HIDE` · `MOVE_FWD` actor,d · `LOOK_AT` a,b · `LOOK_AT_POINT` · `GET_X/Y/Z` · `ACTOR_AREA` · `ACTOR_FLAG` · `NO_COLLIDE` · `IF_TOUCH` a,b,L |
+| Scene | `AREA` n (current area, global `0x36698`) · `CAMERA` id (room camera table) · `CAMERA_RESET` (re-pick from the zone) · `DRAW` / `DRAW_B` / `DRAW_ROOM` (render a frame) · `CLEAR` · `FADE_OUT`/`FADE_IN` n · `PICTURE` n (full-screen still) · `SLEEP` vblanks |
+| Player | `PLAYER_POS` x,y,z · `PLAYER_AREA` · `SHOW_PLAYER`/`HIDE_PLAYER` · `PLAYER_ANIM` slot · `PLAYER_ANIM_CUT` · `PLAYER_ANIM_STEP` · `DEF_PLAYER_ANIM` · `ATTACH_PARTS` · `HOLD` mesh |
+| Objects | `OBJ_ANIM` · `OBJ_ANIM_STEP` · `DEF_OBJ_ANIM` (second animation table at `0x3C0E0`) |
+| Text/sound | `MESSAGE` id,time,reset (queue of 32) · `SE` n · `SE_LOAD`/`SE_PLAY`/`SE_STOP` · `BGM` track |
+| Flow | `IF_SKIP` L (Start/X) · `WAIT_RELEASE` · `IF_ITEM` item,L · `ITEM_SLOT` · `ITEM_SCREEN` · `LOAD_ROOM` n · `LOAD_SCRIPT` n · `EXIT` (end the room loop) · `SAVE?` |
+
+**Areas and cameras are script-driven.** A cutscene switches to its own area (`AREA 9`, `ACTOR_AREA obj, 9`), poses the camera actor directly with `SET_POS`/`LOOK_AT`, draws frames itself in a `FOR` loop, then restores `AREA 0`. Room 001's chandelier cutscene (L357) is a clear example. In normal play the camera comes from the zone grid. `CAMERA_RESET` forces it to be re-picked.
+
+**More animation slots:** player animation slots go past 16. Close-up face animations live in later slots (e.g. 24), defined at boot and by `DEF_PLAYER_ANIM`.
+
+Unnamed so far: about 40 rare commands, plus the meaning of `ACTOR_FLAG` (+0x2C), `SE_76`, `FC60`, `FC7F`. Getters that write the preceding variable: FC63–65, FC7B–7C, FC8D–8F, FCB7–BC.
 
 ## Text — `mes/` 🟡
 - `start.script`: ASCII room table — `ROOMnnn id x y z` (spawn position).
