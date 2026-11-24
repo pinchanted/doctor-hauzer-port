@@ -24,33 +24,35 @@ sub_04488 = step, once per game tick:
   t += 1, plus one more while key == 0 (the cross-fade runs at double speed)
 
 Poses here are HumanPol mesh numbers; the snapshot key is written as None.
-Names are ours. walk/walk_back/jog/run are confirmed by code: their wrappers (0x5974, 0x59bc, 0x5a04,
-0x590c) fire sub_06418 - most likely the footstep sound - on fixed ticks (walk 2,10; walk_back 6,14;
-jog 5,13; run 0,4,8,12). The rest are named from the poses (`anim.py strips`) and are tentative.
-The player movement state machine 0x5aa4 selects slots 3,4,5,7,8,9,15 and 16; 0x5578 selects 1.
+Names are ours, mostly settled by the movement code (tools/player.py, 0x5aa4):
+walk (3), walk_back (4), run (6), push (7), pull (8), jump (5), examine (9), turn (1, played while
+turning in place), idle (2, the normal idle; slot 0 is the same list, used before the first input).
+Footstep wrappers fire sub_06418 on fixed ticks: walk 0x5974 (2, 10), walk_back 0x59bc (6, 14),
+run 0x590c (0, 4, 8, 12), push 0x5a04 (5, 13), pull 0x5a44 (6, 14).
+Slots 10/11/15/16 are R+Down/Up/Right/Left holds; 12 reach and 13 collapse come from scripts.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # (slot, name, shift, loop, keys after the snapshot)
 ANIMS = [
-    (0,  'idle'         , 4, 2, [1, 1, 2, 1, 3]),
-    (1,  'step'         , 3, 1, [4, 5]),
-    (2,  'idle_b'       , 4, 2, [1, 1, 2, 1, 3]),
+    (0,  'idle_start'   , 4, 2, [1, 1, 2, 1, 3]),
+    (1,  'turn'         , 3, 1, [4, 5]),
+    (2,  'idle'         , 4, 2, [1, 1, 2, 1, 3]),
     (3,  'walk'         , 2, 1, [7, 8, 9, 6]),
     (4,  'walk_back'    , 2, 1, [6, 9, 8, 7]),
-    (5,  'jog'          , 2, 3, [4, 10, 11, 12, 44, 8]),
+    (5,  'jump'         , 2, 3, [4, 10, 11, 12, 44, 8]),
     (6,  'run'          , 1, 1, [13, 14, 15, 16]),
     (7,  'push'         , 2, 2, [21, 17, 18, 19, 20]),
-    (8,  'climb'        , 2, 1, [22, 24, 23, 25]),
-    (9,  'pose_27'      , 3, 2, [27, 27, 27]),
-    (10, 'pose_30'      , 3, 1, [30, 30]),
-    (11, 'pose_31'      , 3, 1, [31, 31]),
+    (8,  'pull'         , 2, 1, [22, 24, 23, 25]),
+    (9,  'examine'      , 3, 2, [27, 27, 27]),
+    (10, 'hold_r_down'  , 3, 1, [30, 30]),
+    (11, 'hold_r_up'    , 3, 1, [31, 31]),
     (12, 'reach'        , 2, 1, [32, 33, 34]),
     (13, 'collapse'     , 4, 1, [35, 36, 37, 38, 39]),
     (14, 'sidestep'     , 2, 1, [40, 41, 42, 43]),
-    (15, 'pose_28'      , 3, 2, [28, 28, 28]),
-    (16, 'pose_29'      , 3, 2, [29, 29, 29]),
+    (15, 'hold_r_right' , 3, 2, [28, 28, 28]),
+    (16, 'hold_r_left'  , 3, 2, [29, 29, 29]),
 ]
 BY_NAME = {a[1]: a for a in ANIMS}
 

@@ -106,11 +106,12 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
 
 - **2026-11-23** — Faces are variable length (triangles were being dropped): every mesh in the game now parses exactly. Player character decoded: 47 vertex-animated body poses with head and hands attached at per-frame marker triangles, close-up expression heads, items, YES/NO panels; texture tables read from the executable. The player renders correctly inside rooms from the game's cameras.
 
-- **2026-11-24** — Player animation system decoded from the code: 17 animations, each a list of key poses with a per-animation speed and loop point. Poses blend linearly, and every animation change cross-fades from the current pose. Walk, walk-back, jog and run are confirmed through their footstep-sound timing (`docs/FORMATS.md`, `tools/anim.py`).
+- **2026-11-24** — Player animation system decoded from the code: 17 animations, each a list of key poses with a per-animation speed and loop point. Poses blend linearly, and every animation change cross-fades from the current pose. Movement names confirmed by code (`docs/FORMATS.md`, `tools/anim.py`).
+
+- **2026-11-24** — Player control decoded end to end. That covers the full button map, all 16 movement states (walk/run/turn speeds, jump, push/pull blocks, examine, use item), wall-sliding collision, and how examine and floor triggers raise the script's `ON` events. `tools/player.py` simulates it in real rooms. In room 001, walking into the door and pressing A raises exactly the event the script listens for. The original has no fixed frame rate (one tick per rendered frame), so the port gets a configurable logic rate.
 
 ## Next steps
 
-1. Player movement: the state machine at `0x5AA4` — input → animation slot, speeds, turning, collision response; game tick rate.
-2. Name the game commands (`0xFC60–0xFCCF`), starting with the most frequent; find what sets the current area and camera.
-3. Camera field of view / projection from the renderer (`0x12ee4` → `0x13c50` / `0x14118`), checked against gameplay footage.
-4. Start the engine: PC build that loads a room, draws it from the zone camera with HD textures, and runs its script.
+1. Name the game commands (`0xFC60–0xFCCF`), starting with the most frequent; find what sets the current area and camera.
+2. Camera field of view / projection from the renderer (`0x12ee4` → `0x13c50` / `0x14118`), checked against gameplay footage; calibrate the logic rate from the same footage.
+3. Start the engine: PC build that loads a room, draws it from the zone camera with HD textures, and runs its script.

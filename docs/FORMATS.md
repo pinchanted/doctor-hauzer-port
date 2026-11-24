@@ -101,31 +101,89 @@ Defined in code, not in a file: `sub_03db4` builds 17 animation slots of 0x3C by
 
 | Slot | Name | Ticks/key | Loop → | Poses |
 |---|---|---|---|---|
-| 0 | idle | 16 | 2 | 1 1 2 1 3 |
-| 1 | step | 8 | 1 | 4 5 |
-| 2 | idle_b | 16 | 2 | 1 1 2 1 3 |
+| 0 | idle_start | 16 | 2 | 1 1 2 1 3 |
+| 1 | turn (in place) | 8 | 1 | 4 5 |
+| 2 | idle | 16 | 2 | 1 1 2 1 3 |
 | 3 | walk | 4 | 1 | 7 8 9 6 |
 | 4 | walk_back | 4 | 1 | 6 9 8 7 |
-| 5 | jog | 4 | 3 | 4 10 11 12 44 8 |
+| 5 | jump | 4 | 3 | 4 10 11 12 44 8 |
 | 6 | run | 2 | 1 | 13 14 15 16 |
 | 7 | push | 4 | 2 | 21 17 18 19 20 |
-| 8 | climb | 4 | 1 | 22 24 23 25 |
-| 9 | pose_27 | 8 | 2 | 27 27 27 |
-| 10 | pose_30 | 8 | 1 | 30 30 |
-| 11 | pose_31 | 8 | 1 | 31 31 |
+| 8 | pull | 4 | 1 | 22 24 23 25 |
+| 9 | examine | 8 | 2 | 27 27 27 |
+| 10 | hold_r_down | 8 | 1 | 30 30 |
+| 11 | hold_r_up | 8 | 1 | 31 31 |
 | 12 | reach | 4 | 1 | 32 33 34 |
 | 13 | collapse | 16 | 1 | 35 36 37 38 39 |
-| 14 | sidestep | 4 | 1 | 40 41 42 43 |
-| 15 | pose_28 | 8 | 2 | 28 28 28 |
-| 16 | pose_29 | 8 | 2 | 29 29 29 |
+| 14 | sidestep (unused by the player code) | 4 | 1 | 40 41 42 43 |
+| 15 | hold_r_right | 8 | 2 | 28 28 28 |
+| 16 | hold_r_left | 8 | 2 | 29 29 29 |
 
-**Which names are confirmed:** walk, walk_back, jog and run are confirmed by code. Their wrappers (`0x5974`, `0x59BC`, `0x5A04`, `0x590C`) fire `sub_06418` (likely the footstep sound) on fixed ticks. The other names come from the poses and are tentative.
+**How the names were settled:**
+- **From the movement code:** most names come from `tools/player.py`.
+- **Footstep timing:** each gait's footstep wrapper fires `sub_06418` on fixed ticks:
 
-**Callers:** the movement state machine `0x5AA4` selects slots 3, 4, 5, 7, 8, 9, 15 and 16; `0x5578` selects slot 1.
+  | Gait | Wrapper | Footstep ticks |
+  |---|---|---|
+  | walk | `0x5974` | 2, 10 |
+  | walk_back | `0x59BC` | 6, 14 |
+  | run | `0x590C` | 0, 4, 8, 12 |
+  | push | `0x5A04` | 5, 13 |
+  | pull | `0x5A44` | 6, 14 |
+
+- **From scripts:** reach (12) and collapse (13) are triggered by scripts. Slot 14 is not used by the player code.
 
 **Implementation:** `tools/anim.py` holds the table, a faithful stepper (`Player`) and `strips` (a contact sheet of each animation's keys).
 
 **Port note:** the engine should blend in floating point at the display rate (60 fps). The integer `t >> shift` steps of the original then become smooth motion.
+
+### Player control, movement and collision ✅
+Reverse-engineered from `0x5578` (input), `0x5AA4` (16-state switch) and `0x10EE0`/`0x109D4`/`0x10B40` (collision). Modelled in `tools/player.py`.
+
+**Controls** (3DO pad bits, pad word at `0x33ED8`). B is a "run/handle" modifier and R a "pose" modifier.
+
+| Input | State → effect |
+|---|---|
+| Up / Down | 1 walk 14 units/tick / 2 walk back 14 |
+| Right / Left | 4 / 5 turn ∓8 of 256 per tick (11.25°), turn animation |
+| B + Up | 7 run 28/tick; pushes a pushable at 18/tick |
+| B + Down | 8 pull: drags a pushable within 36 units ahead back 14/tick, else steps back |
+| B + Right/Left | turn without the turn animation |
+| A (without Up/Down) | 6 examine: probe 80 ahead; fires event (trigger, 2, 0) |
+| C | 3 jump: 8 ticks wind-up, 12 ticks at 28/tick, 4 ticks landing (336 units) |
+| R + direction | hold poses 9/10/14/15 |
+| Start | item menu (`0xF26C`); using an item fires (trigger 80 ahead, 3, item) → state 13 |
+| X | controls screen (`images/operation.img`) |
+| L | `sub_01814` + `sub_04a9c` (TBD) |
+| Nothing | idle |
+
+**Walking into a pushable** (state 1) switches to the push animation and moves it at 12/tick.
+
+**Movement:**
+- **Direction:** the move vector `(0, 0, d)` is rotated by the actor's angles (math folio `SWI 0x50000`). Each component is truncated to whole units (floor), then added to the 16.16 position.
+- **Wall sliding (walk/run):** the full move is tried first only to detect a pushable. Then the position is restored, and the x-only and z-only moves are applied separately, each undone if it collides.
+
+**Collision volumes** are axis-aligned boxes, stored 40 bytes per actor handle at `0x5C498`:
+
+| Offset | Field |
+|---|---|
+| +0 | type (1 = solid) |
+| +4 | actor |
+| +8…+0x1C | min/max x, y, z (16.16, actor-relative) |
+| +0x20 | trigger id |
+| +0x24 | solid kind returned on overlap: 0 none, 1 solid, 2 pushable, 99 wall |
+
+Overlap: centre distance is less than the sum of half sizes, on every axis.
+
+- **Player:** box ±60 × 270 tall (feet at y = +200). It shrinks to ±30 for the floor-trigger check (`0x10FB4`), which fires event (trigger, 1, 0) every tick.
+- **Walls and floor triggers** (`0x12AE0`): one box per grid cell of 200 units. Cell x = −2000 + col·200, z = 2000 − row·200, y −200…200. Layer 1 = 99 makes a wall; a non-zero layer 2 sets the cell's trigger id.
+- **Room objects** (`0x10D28`, handles 100+): box = bounds of the mesh's *local* vertices, ignoring rotation, around the object position. Solid kind = record +0x70; trigger = record +0x74. Only objects in the current area count.
+- **Script hooks:** events match script `ON (trigger, kind, item)` lines. For example, room 001's `ON (31, 2, 0)` = examine the door with trigger 31; verified in the simulation.
+
+**Timing:** the gameplay loop has no vertical-blank wait (`DisplayScreen` flips as soon as a frame is drawn), so one tick = one rendered frame and the original speed varied with scene load. The port uses a fixed, configurable logic rate, to be calibrated against gameplay footage.
+
+**Open questions:**
+- Room 001's `ON (41, 1, 0)` (floor event under the chandelier) can't fire with the chandelier hanging (box y −366…−242). It is probably reached after a script moves the chandelier.
 
 `RGB.bin` is a "mato" (*matome*, bundle) file: three tables of 16 RGB colours (5-bit), not used by the textured player; purpose TBD (likely lighting or effect colours).
 
