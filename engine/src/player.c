@@ -23,6 +23,20 @@ static int overlaps(const Box *a, const Box *b) {
     return 1;
 }
 
+/* world-space copy of a volume; NULL result flag when its object is not in the current area */
+static int world(const Player *p, const Box *v, Box *out) {
+    *out = *v;
+    if (!v->owner) return 1;
+    if (v->owner->area != p->area) return 0;
+    for (int k = 0; k < 3; k++) { out->lo[k] += v->owner->pos[k]; out->hi[k] += v->owner->pos[k]; }
+    return 1;
+}
+
+static int vol_hits(const Player *p, const Box *v, const Box *b) {
+    Box w;
+    return world(p, v, &w) && overlaps(&w, b);
+}
+
 void player_rebuild_volumes(Player *p) {
     Room *r = p->room;
     free(p->vols);
@@ -40,7 +54,7 @@ void player_rebuild_volumes(Player *p) {
     }
     for (int i = 1; i < r->nobjects; i++) {
         RoomObject *o = &r->objects[i];
-        if (o->area != p->area || !o->mesh.nverts || !(o->collidable || o->trigger)) continue;
+        if (!o->mesh.nverts || !(o->collidable || o->trigger)) continue;
         Box b; memset(&b, 0, sizeof b);
         for (int k = 0; k < 3; k++) { b.lo[k] = 1e9f; b.hi[k] = -1e9f; }
         for (int v = 0; v < o->mesh.nverts; v++)       /* local vertices: rotation ignored, as in 0x10d28 */
@@ -48,7 +62,6 @@ void player_rebuild_volumes(Player *p) {
                 if (o->mesh.verts[v][k] < b.lo[k]) b.lo[k] = o->mesh.verts[v][k];
                 if (o->mesh.verts[v][k] > b.hi[k]) b.hi[k] = o->mesh.verts[v][k];
             }
-        for (int k = 0; k < 3; k++) { b.lo[k] += o->pos[k]; b.hi[k] += o->pos[k]; }
         b.solid = o->collidable; b.trigger = o->trigger; b.owner = o;
         p->vols[p->nvols++] = b;
     }
@@ -78,7 +91,7 @@ static void move(Player *p, float d, int ux, int uz) {
 
 static Box *hit(Player *p) {
     Box b = actor_box(p->pos, PLAYER_BOX);
-    for (int i = 0; i < p->nvols; i++) if (p->vols[i].solid && overlaps(&p->vols[i], &b)) return &p->vols[i];
+    for (int i = 0; i < p->nvols; i++) if (p->vols[i].solid && vol_hits(p, &p->vols[i], &b)) return &p->vols[i];
     return NULL;
 }
 
@@ -88,14 +101,14 @@ static int probe(Player *p, float dist) {
     Box b = actor_box(p->pos, PLAYER_BOX);
     int best = 0;
     for (int i = 0; i < p->nvols; i++)
-        if (p->vols[i].trigger && overlaps(&p->vols[i], &b) && (!best || p->vols[i].trigger < best)) best = p->vols[i].trigger;
+        if (p->vols[i].trigger && vol_hits(p, &p->vols[i], &b) && (!best || p->vols[i].trigger < best)) best = p->vols[i].trigger;
     memcpy(p->pos, save, sizeof save);
     return best;
 }
 
 static int floor_trigger(Player *p) {
     Box b = actor_box(p->pos, FLOOR_BOX);
-    for (int i = 0; i < p->nvols; i++) if (p->vols[i].trigger && overlaps(&p->vols[i], &b)) return p->vols[i].trigger;
+    for (int i = 0; i < p->nvols; i++) if (p->vols[i].trigger && vol_hits(p, &p->vols[i], &b)) return p->vols[i].trigger;
     return 0;
 }
 
@@ -119,19 +132,23 @@ static Box *slide(Player *p, float d) {
 }
 
 static void push(Player *p, Box *box, float step) {
+    if (!box->owner) return;
     float vx, vz; vec(p, step, &vx, &vz);
     float dx = floorf(vx), dz = floorf(vz);
-    Box old = *box;
     float save[3]; memcpy(save, p->pos, sizeof save);
-    box->lo[0] += dx; box->hi[0] += dx; box->lo[2] += dz; box->hi[2] += dz;
+    box->owner->pos[0] += dx; box->owner->pos[2] += dz;
     p->pos[0] += dx; p->pos[2] += dz;
-    Box pb = actor_box(p->pos, PLAYER_BOX);
+    Box pb = actor_box(p->pos, PLAYER_BOX), bw;
+    world(p, box, &bw);
     for (int i = 0; i < p->nvols; i++) {
         Box *v = &p->vols[i];
         if (v == box || !v->solid) continue;
-        if (overlaps(v, box) || overlaps(v, &pb)) { *box = old; memcpy(p->pos, save, sizeof save); return; }
+        if (vol_hits(p, v, &bw) || vol_hits(p, v, &pb)) {
+            box->owner->pos[0] -= dx; box->owner->pos[2] -= dz;
+            memcpy(p->pos, save, sizeof save);
+            return;
+        }
     }
-    if (box->owner) { box->owner->pos[0] += dx; box->owner->pos[2] += dz; }
 }
 
 static void state(Player *p, int s, int item) {

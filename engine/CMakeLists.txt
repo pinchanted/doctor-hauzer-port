@@ -3,7 +3,7 @@ project(hauzer C)
 set(CMAKE_C_STANDARD 11)
 
 # Shared engine core (platform-independent; the Vita and Android builds reuse these files)
-set(CORE src/util.c src/cel.c src/room.c src/human.c src/player.c src/render.c src/script.c src/game.c)
+set(CORE src/util.c src/cel.c src/room.c src/human.c src/player.c src/render.c src/script.c src/text.c src/game.c)
 
 find_package(SDL2 REQUIRED)
 add_executable(hauzer ${CORE} src/main_pc.c)

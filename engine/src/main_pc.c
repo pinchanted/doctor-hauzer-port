@@ -45,6 +45,24 @@ static void run_input(Game *g, const char *spec) {
     free(s);
 }
 
+/* the current message, centred near the bottom, text height 1/20 of the screen */
+static void draw_message(Renderer *rnd, Game *g, int w, int h) {
+    static int key = -1, bw, bh;
+    static const uint32_t GAME_OVER[] = {'G', 'A', 'M', 'E', ' ', 'O', 'V', 'E', 'R', 0};
+    int id = g->gameover ? 9999 : g->msg_id;
+    if (!g->gameover && !g->msg_shown) return;
+    int px = h / 18 > 12 ? h / 18 : 12;
+    if (g->gameover) px *= 2;
+    int k = id * 4096 + px;
+    Image im = {0};
+    if (k != key) {
+        if (text_render_box(g->gameover ? GAME_OVER : messages_get(&g->mes, g->msg_id), px, &im)) return;
+        bw = im.w; bh = im.h; key = k;
+    }
+    render_overlay(rnd, k, im.rgba ? &im : NULL, (w - bw) / 2, g->gameover ? (h - bh) / 2 : h - bh - h / 14, w, h);
+    image_free(&im);
+}
+
 static uint32_t read_pad(SDL_GameController *gc) {
     const Uint8 *k = SDL_GetKeyboardState(NULL);
     uint32_t pad = 0;
@@ -79,7 +97,7 @@ static uint32_t read_pad(SDL_GameController *gc) {
 }
 
 int main(int argc, char **argv) {
-    const char *data = "extracted/fs", *hd = NULL, *shot = NULL, *input = NULL;
+    const char *data = "extracted/fs", *hd = NULL, *shot = NULL, *input = NULL, *textf = NULL, *fontf = NULL;
     int room = 1, hz = 20, w = 1280, h = 720, camera = -1;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
@@ -90,6 +108,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--input") && i + 1 < argc) input = argv[++i];
         else if (!strcmp(argv[i], "--camera") && i + 1 < argc) camera = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &w, &h);
+        else if (!strcmp(argv[i], "--text") && i + 1 < argc) textf = argv[++i];
+        else if (!strcmp(argv[i], "--font") && i + 1 < argc) fontf = argv[++i];
     }
     if (hz < 1) hz = 20;
     int gles = getenv("HZ_GLES") != NULL;
@@ -119,7 +139,15 @@ int main(int argc, char **argv) {
 
     Renderer *rnd = render_create(gles, hd);
     static Game g;
-    if (!rnd || game_init(&g, data)) { fprintf(stderr, "init failed (data: %s)\n", data); return 1; }
+    char fontbuf[1200];
+    if (!fontf) {
+        char *base = SDL_GetBasePath();
+        path_join(fontbuf, sizeof fontbuf, base ? base : ".", "fonts/NotoSansJP.ttf");
+        if (base) SDL_free(base);
+        fontf = fontbuf;
+    }
+    text_init(fontf);
+    if (!rnd || game_init(&g, data, textf)) { fprintf(stderr, "init failed (data: %s)\n", data); return 1; }
     g.hz = hz;
     render_set_human(rnd, &g.human);
     if (game_load_room(&g, room, rnd)) { fprintf(stderr, "cannot load room %d\n", room); return 1; }
@@ -130,6 +158,8 @@ int main(int argc, char **argv) {
         CameraView cam;
         game_view(&g, 1.0f, &cam);
         render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, &g.overlay_tris, w, h);
+        render_dim(rnd, game_fade_level(&g, 1.0f), w, h);
+        draw_message(rnd, &g, w, h);
         int rc = render_screenshot(w, h, shot);
         log_msg("room %03d area %d: player at (%g, %g, %g) ry %g, camera %d (mode %d) -> %s", g.room_id, g.area,
                 g.player.pos[0], g.player.pos[1], g.player.pos[2], g.player.ry, g.camera, g.cam_mode, shot);
@@ -180,6 +210,8 @@ int main(int argc, char **argv) {
         CameraView cam;
         game_view(&g, (float)(acc / step), &cam);
         render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, &g.overlay_tris, dw, dh);
+        render_dim(rnd, game_fade_level(&g, (float)(acc / step)), dw, dh);
+        draw_message(rnd, &g, dw, dh);
         SDL_GL_SwapWindow(win);
     }
     render_destroy(rnd);

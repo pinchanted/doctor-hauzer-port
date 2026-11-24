@@ -5,6 +5,7 @@
 #include "render.h"
 #include "room.h"
 #include "script.h"
+#include "text.h"
 
 /* actor handles (launchme's 56-byte actor table at 0x58aa0): 0 camera, 1 player body,
  * 3-49 poses, 50-59 close-up heads, 60 head, 61+ hands/panels/items, 100+ room objects */
@@ -33,8 +34,16 @@ typedef struct Game {
     int cam_reset_pending;    /* CAMERA_RESET takes effect when the script run ends (0x4b8c) */
     uint32_t prev_pad;
     int zone_event;
+    /* screen fades (FADE_OUT / FADE_IN, 0x1a40 / 0x1a8c) and game over (EXIT -> 0xc90) */
+    float fade_from, fade_to; int fade_t, fade_n, fade_snap_back;
+    int gameover;             /* ticks left of the game-over card; 0 = playing */
+    int gameover_msg;
     int pending_room, pending_script, exit_requested;
-    int msg_id, msg_frames;
+    /* messages (launchme 0x4868 queue / 0x48fc pop / 0x4a28 per-frame countdown) */
+    Messages mes;
+    struct { int id, time; } mq[32];
+    int msg_id, msg_frames, msg_shown;
+    int msg_scale_num, msg_scale_den;   /* original frames -> our ticks */
     /* interpolation */
     float prev_pos[3], prev_ry;
     float prev_body[128][3];
@@ -45,7 +54,7 @@ typedef struct Game {
     Renderer *renderer;
 } Game;
 
-int game_init(Game *g, const char *fs_dir);
+int game_init(Game *g, const char *fs_dir, const char *text_override);
 int game_load_room(Game *g, int room_id, Renderer *r);           /* spawn from start.script, fires event 1 */
 void game_tick(Game *g, uint32_t pad);
 void game_view(Game *g, float alpha, CameraView *cam);          /* also builds g->player_tris */
@@ -64,3 +73,5 @@ void game_set_area(Game *g, int area);
 void game_camera_fixed(Game *g, int id);
 void game_camera_reset(Game *g);
 void game_message(Game *g, int id, int time, int reset);
+void game_fade(Game *g, int out, int vblanks);
+float game_fade_level(const Game *g, float alpha);

@@ -24,6 +24,7 @@ assets_hd/
 assets_src/
 build/
 disc/
+engine/assets/fonts/*.ttf
 engine/build/
 engine/dist-win/
 extracted/

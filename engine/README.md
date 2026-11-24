@@ -11,6 +11,8 @@ Native reimplementation of the 3DO game's engine, built from the formats and cod
 | `src/human.c` | player model, marker-attached head/hands, the 17 animations and their stepper |
 | `src/player.c` | input → 16 movement states, wall-sliding collision, push/pull, examine/floor triggers |
 | `src/render.c` | GL renderer at GLES2 level (desktop GL 2.1 / GLES 2+ / vitaGL); the game's exact projection; HD texture override by hash |
+| `src/script.c` | room script VM (event model of `0x6EB4` / `0xA500`) and the game commands |
+| `src/text.c` | messages (`mes.scp` Shift-JIS + exe table for ids 400+, optional UTF-8 override) rendered with stb_truetype |
 | `src/game.c` | room loading, spawn table, zone cameras, fixed-rate logic with display-rate interpolation |
 | `src/main_pc.c` | SDL2 front end + headless screenshot harness |
 
@@ -21,7 +23,7 @@ Keys: arrows = d-pad · Z = A (examine) · X / Shift = B (run, push/pull) · C /
 Enter = Start (skips cutscenes) · **Q = L: change view (fixed cameras / overhead / first person)** · W = R · **PageUp / PageDown = previous / next room** · **H = HD / original
 textures** · F12 = screenshot · Esc = quit. A game controller works too (A examine, X run, B jump).
 
-Options: `--room N`, `--hz N` (logic rate, default 20 - the original had no fixed rate),
+Options: `--text file.txt` (UTF-8, one message per line, e.g. an English translation), `--room N`, `--hz N` (logic rate, default 20 - the original had no fixed rate),
 `--size WxH`, `--camera N`.
 
 ## Build
@@ -30,4 +32,7 @@ Options: `--room N`, `--hz N` (logic rate, default 20 - the original had no fixe
 - Headless test: `SDL_VIDEODRIVER=offscreen ./hauzer --data … --shot out.png --input "UP*30,A"`.
 
 ## Not yet
-Room scripts (the VM), doors/room changes, messages and text, menus and items, sound, music, FMV.
+Sound effects and music, FMV (game-over / ending movies), items and the Start menu, English text.
+
+## Fonts
+`./fetch_assets.sh` downloads Noto Sans JP (SIL OFL 1.1) into `assets/fonts/`; the Windows build ships it in `fonts/`.

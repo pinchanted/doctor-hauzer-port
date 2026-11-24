@@ -216,7 +216,7 @@ static void game_op(Script *s, Game *g, int opc) {
     case 0xfcab: game_camera_reset(g); break;                                          /* CAMERA_RESET */
     case 0xfca7: case 0xfca8: case 0xfc9e: s->pc = next; suspend(s, 1); return;       /* DRAW */
     case 0xfcc8: s->pc = next; suspend(s, (a0 * g->hz + 59) / 60); return;             /* SLEEP vblanks */
-    case 0xfcb4: case 0xfcb3: s->pc = next; suspend(s, (a0 * g->hz + 59) / 60); return;   /* FADE_OUT / FADE_IN */
+    case 0xfcb4: case 0xfcb3: game_fade(g, opc == 0xfcb4, a0); s->pc = next; suspend(s, (a0 * g->hz + 59) / 60); return;   /* FADE_OUT / FADE_IN */
     case 0xfcaa: game_message(g, a0, a1, a2); break;                                   /* MESSAGE */
     case 0xfca6: log_msg("  SE %d", a0); break;
     case 0xfca5: log_msg("  BGM %d", a0); break;

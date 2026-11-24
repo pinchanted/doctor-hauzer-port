@@ -49,7 +49,8 @@ typedef struct { GLuint vbo; int nb; Batch b[64]; } ObjGeo;
 struct Renderer {
     int gles;
     char hd_dir[1024];
-    GLuint prog; GLint u_mv, u_proj, u_bias, u_tex;
+    GLuint prog; GLint u_mv, u_proj, u_bias, u_tex, u_mode, u_alpha;
+    GLuint ovl_tex; int ovl_key, ovl_w, ovl_h; GLuint ovl_vbo;
     GLuint white;
     GLuint *room_tex; int nroom_tex;
     ObjGeo *geo; int ngeo;
@@ -65,9 +66,13 @@ static const char *VS =
     "attribute vec3 a_pos;\nattribute vec2 a_uv;\nuniform mat4 u_mv;\nuniform mat4 u_proj;\nuniform float u_bias;\n"
     "varying vec2 v_uv;\n"
     "void main() { v_uv = a_uv; vec4 e = u_mv * vec4(a_pos, 1.0); e.z += u_bias; gl_Position = u_proj * e; }\n";
+/* u_mode 0: cut-out (3D textures, binary alpha); 1: blended overlay (text, UI) */
 static const char *FS =
-    "varying vec2 v_uv;\nuniform sampler2D u_tex;\n"
-    "void main() { vec4 c = texture2D(u_tex, v_uv); if (c.a < 0.5) discard; gl_FragColor = vec4(c.rgb / c.a, 1.0); }\n";
+    "varying vec2 v_uv;\nuniform sampler2D u_tex;\nuniform float u_mode;\nuniform float u_alpha;\n"
+    "void main() { vec4 c = texture2D(u_tex, v_uv);\n"
+    "  if (u_mode < 0.5) { if (c.a < 0.5) discard; gl_FragColor = vec4(c.rgb / c.a, 1.0); }\n"
+    "  else if (u_mode < 1.5) gl_FragColor = c;\n"
+    "  else gl_FragColor = vec4(0.0, 0.0, 0.0, u_alpha); }\n";
 
 static GLuint compile(GLenum type, const char *src, int gles) {
     const char *pre = gles ? "#version 100\nprecision mediump float;\n" : "#version 120\n";
@@ -138,10 +143,14 @@ Renderer *render_create(int gles, const char *hd_dir) {
     r->u_mv = p_glGetUniformLocation(r->prog, "u_mv");
     r->u_proj = p_glGetUniformLocation(r->prog, "u_proj");
     r->u_bias = p_glGetUniformLocation(r->prog, "u_bias");
+    r->u_mode = p_glGetUniformLocation(r->prog, "u_mode");
+    r->u_alpha = p_glGetUniformLocation(r->prog, "u_alpha");
+    r->ovl_key = -1;
     r->u_tex = p_glGetUniformLocation(r->prog, "u_tex");
     uint8_t white[4] = {255, 0, 255, 255};
     r->white = upload_rgba(r, white, 1, 1);
     p_glGenBuffers(1, &r->player_vbo);
+    p_glGenBuffers(1, &r->ovl_vbo);
     log_msg("GL: %s / %s%s", glGetString(GL_RENDERER), glGetString(GL_VERSION), r->anisotropy > 1 ? " (anisotropic)" : "");
     return r;
 }
@@ -261,6 +270,8 @@ void render_frame(Renderer *r, const Room *room, int area, const CameraView *cam
     p_glUseProgram(r->prog);
     p_glActiveTexture(GL_TEXTURE0);
     p_glUniform1i(r->u_tex, 0);
+    p_glUniform1f(r->u_mode, 0.0f);
+    glDisable(GL_BLEND);
     p_glEnableVertexAttribArray(0);
     p_glEnableVertexAttribArray(1);
     float V[16], P[16], M[16], MV[16];
@@ -315,4 +326,67 @@ int render_screenshot(int w, int h, const char *path) {
     int ok = stbi_write_png(path, w, h, 4, px, w * 4);
     free(px);
     return ok ? 0 : -1;
+}
+
+/* A 2D image (e.g. a message box) in screen pixels, blended over the frame. The texture is cached
+ * under `key`; pass the image only when the key changes. */
+void render_overlay(Renderer *r, int key, const Image *img, int x, int y, int sw, int sh) {
+    if (key != r->ovl_key && img && img->rgba) {
+        if (r->ovl_tex) glDeleteTextures(1, &r->ovl_tex);
+        r->ovl_tex = upload_rgba(r, img->rgba, img->w, img->h);
+        r->ovl_w = img->w; r->ovl_h = img->h; r->ovl_key = key;
+    }
+    if (key != r->ovl_key || !r->ovl_tex) return;
+    float x0 = (float)x, y0 = (float)y, x1 = x0 + r->ovl_w, y1 = y0 + r->ovl_h;
+    Vtx v[6] = {{{x0, y0, 0}, {0, 0}}, {{x1, y0, 0}, {1, 0}}, {{x1, y1, 0}, {1, 1}},
+                {{x0, y0, 0}, {0, 0}}, {{x1, y1, 0}, {1, 1}}, {{x0, y1, 0}, {0, 1}}};
+    float I[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    float P[16] = {2.0f / sw, 0, 0, 0, 0, -2.0f / sh, 0, 0, 0, 0, 1, 0, -1, 1, 0, 1};
+    glViewport(0, 0, sw, sh);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);      /* texture is premultiplied */
+    p_glUseProgram(r->prog);
+    p_glUniform1f(r->u_mode, 1.0f);
+    p_glUniform1f(r->u_bias, 0.0f);
+    p_glUniformMatrix4fv(r->u_mv, 1, GL_FALSE, I);
+    p_glUniformMatrix4fv(r->u_proj, 1, GL_FALSE, P);
+    p_glBindBuffer(GL_ARRAY_BUFFER, r->ovl_vbo);
+    p_glBufferData(GL_ARRAY_BUFFER, sizeof v, v, GL_STREAM_DRAW);
+    p_glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vtx), (void *)0);
+    p_glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vtx), (void *)(sizeof(float) * 3));
+    glBindTexture(GL_TEXTURE_2D, r->ovl_tex);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDisable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+    p_glUniform1f(r->u_mode, 0.0f);
+}
+
+/* darken the whole frame (fades); a = 0 none .. 1 black */
+void render_dim(Renderer *r, float a, int sw, int sh) {
+    if (a <= 0.0f) return;
+    Vtx v[6] = {{{-1, -1, 0}, {0, 0}}, {{1, -1, 0}, {1, 0}}, {{1, 1, 0}, {1, 1}},
+                {{-1, -1, 0}, {0, 0}}, {{1, 1, 0}, {1, 1}}, {{-1, 1, 0}, {0, 1}}};
+    float I[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    glViewport(0, 0, sw, sh);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    p_glUseProgram(r->prog);
+    p_glUniform1f(r->u_mode, 2.0f);
+    p_glUniform1f(r->u_alpha, a > 1 ? 1 : a);
+    p_glUniform1f(r->u_bias, 0.0f);
+    p_glUniformMatrix4fv(r->u_mv, 1, GL_FALSE, I);
+    p_glUniformMatrix4fv(r->u_proj, 1, GL_FALSE, I);
+    p_glBindBuffer(GL_ARRAY_BUFFER, r->ovl_vbo);
+    p_glBufferData(GL_ARRAY_BUFFER, sizeof v, v, GL_STREAM_DRAW);
+    p_glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vtx), (void *)0);
+    p_glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vtx), (void *)(sizeof(float) * 3));
+    glBindTexture(GL_TEXTURE_2D, r->white);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDisable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+    p_glUniform1f(r->u_mode, 0.0f);
 }

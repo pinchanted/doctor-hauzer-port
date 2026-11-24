@@ -28,7 +28,7 @@ static void load_spawns(Game *g) {
     blob_free(&b);
 }
 
-int game_init(Game *g, const char *fs_dir) {
+int game_init(Game *g, const char *fs_dir, const char *text_override) {
     memset(g, 0, sizeof *g);
     g->hz = 20;
     snprintf(g->fs_dir, sizeof g->fs_dir, "%s", fs_dir);
@@ -39,7 +39,25 @@ int game_init(Game *g, const char *fs_dir) {
     anim_init(&g->anim, &g->human, 2);
     load_spawns(g);
     g->pending_room = g->pending_script = -1;
+    char mes[1200];
+    path_join(mes, sizeof mes, g->orgdata, "mes/mes.scp");
+    messages_load(&g->mes, mes, exe, text_override);
+    /* the original counted message time in rendered frames; it drew rooms at roughly 10 fps */
+    g->msg_scale_num = 1; g->msg_scale_den = 10;
     return 0;
+}
+
+static void message_tick(Game *g) {
+    if (g->msg_frames > 0) { g->msg_frames--; return; }
+    /* pop the next queued message: time 0 = queue empty (box closes); id 0 = a pause without text */
+    if (g->mq[0].time == 0) { g->msg_shown = 0; g->msg_id = 0; }
+    else {
+        g->msg_id = g->mq[0].id;
+        g->msg_shown = g->msg_id != 0 && messages_get(&g->mes, g->msg_id) != NULL;
+        g->msg_frames = g->mq[0].time * g->hz * g->msg_scale_num / g->msg_scale_den;
+    }
+    memmove(&g->mq[0], &g->mq[1], sizeof g->mq[0] * 31);
+    memset(&g->mq[31], 0, sizeof g->mq[31]);
 }
 
 static void finish_script_frame(Game *g);
@@ -96,6 +114,7 @@ static int load_room_data(Game *g, int room_id, int script_id, int keep_player, 
     g->player_hidden = 0;
     g->cam_reset_pending = 0;
     memset(g->actor, 0, sizeof g->actor);
+    memset(g->mq, 0, sizeof g->mq); g->msg_frames = 0; g->msg_shown = 0;
     pick_camera(g);
     if (r) render_set_room(r, &g->room);
     log_msg("room %03d (script %03d): %d objects, %d cameras, player (%g, %g, %g), camera %d", room_id, script_id,
@@ -118,12 +137,58 @@ static void apply_pending(Game *g) {
     }
 }
 
+static void fade_tick(Game *g) {
+    if (g->fade_n <= 0) return;
+    if (++g->fade_t >= g->fade_n) {
+        g->fade_n = 0;
+        if (g->fade_snap_back) { g->fade_from = g->fade_to = 0; g->fade_snap_back = 0; }
+        else g->fade_from = g->fade_to;
+    }
+}
+
+/* FADE_OUT: to black over n vblanks, then the brightness snaps back over a cleared screen, so the next
+ * drawn frame appears at once (0x1a40). FADE_IN: from black over n vblanks (0x1a8c). */
+void game_fade(Game *g, int out, int vblanks) {
+    g->fade_from = out ? 0.0f : 1.0f;
+    g->fade_to = out ? 1.0f : 0.0f;
+    g->fade_t = 0;
+    g->fade_n = vblanks * g->hz / 60 + 1;
+    g->fade_snap_back = out;
+}
+
+float game_fade_level(const Game *g, float alpha) {
+    if (g->gameover) return 1.0f;
+    if (g->fade_n <= 0) return g->fade_to;
+    float t = (g->fade_t + alpha) / (float)g->fade_n;
+    if (t > 1) t = 1;
+    return g->fade_from + (g->fade_to - g->fade_from) * t;
+}
+
+static void new_game(Game *g) {
+    memset(g_globals, 0, sizeof g_globals);
+    memset(g_flags, 0, sizeof g_flags);
+    g->view_mode = 0;
+    g->fade_from = 1.0f; g->fade_to = 0.0f; g->fade_t = 0; g->fade_n = g->hz; g->fade_snap_back = 0;
+    load_room_data(g, 1, 1, 0, g->renderer);
+}
+
 void game_tick(Game *g, uint32_t pad) {
+    fade_tick(g);
+    if (g->gameover) {                               /* game over card, then a new game (original: GODS movie, title) */
+        if (--g->gameover == 0) new_game(g);
+        return;
+    }
+    if (g->exit_requested && !g->script.suspended) {
+        g->exit_requested = 0;
+        g->gameover = g->hz * 4;
+        log_msg("GAME OVER");
+        return;
+    }
     memcpy(g->prev_pos, g->player.pos, sizeof g->prev_pos);
     g->prev_ry = g->player.ry;
     memcpy(g->prev_body, g->anim.cur, sizeof g->prev_body);
     g->skip_pressed = (pad & (PAD_START | PAD_X)) != 0;
-    if (g->msg_frames > 0) g->msg_frames--;
+    message_tick(g);
     if (g->script.suspended) {                       /* a cutscene is playing: the script owns the frame */
         script_resume(&g->script, g);
         finish_script_frame(g);
@@ -224,6 +289,7 @@ void game_free(Game *g) {
     human_free(&g->human);
     free(g->player_tris.v);
     free(g->overlay_tris.v);
+    messages_free(&g->mes);
 }
 
 /* ---------------------------------------------------------------- actors for the script VM */
@@ -329,7 +395,7 @@ static void finish_script_frame(Game *g) {
 }
 
 void game_message(Game *g, int id, int time, int reset) {
-    g->msg_id = id;
-    g->msg_frames = g->hz * 3;
+    if (reset) { memset(g->mq, 0, sizeof g->mq); g->msg_frames = 0; g->mq[0].id = id; g->mq[0].time = time; }
+    else for (int i = 0; i < 32; i++) if (g->mq[i].time == 0) { g->mq[i].id = id; g->mq[i].time = time; break; }
     log_msg("  MESSAGE %d (time %d%s)", id, time, reset ? ", new box" : "");
 }

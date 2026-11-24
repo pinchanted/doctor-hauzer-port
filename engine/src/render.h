@@ -2,6 +2,7 @@
 #pragma once
 #include "human.h"
 #include "room.h"
+#include "cel.h"
 
 typedef struct Renderer Renderer;
 
@@ -18,4 +19,6 @@ void render_set_human(Renderer *r, const HumanModel *h);      /* uploads player 
 void render_frame(Renderer *r, const Room *room, int area, const CameraView *cam,
                   const TriList *player, const TriList *overlay, int w, int h);
 int render_screenshot(int w, int h, const char *path);
+void render_dim(Renderer *r, float a, int sw, int sh);
+void render_overlay(Renderer *r, int key, const Image *img, int x, int y, int sw, int sh);
 extern float GAME_FOV_DEG;

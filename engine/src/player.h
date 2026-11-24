@@ -10,6 +10,8 @@ enum {
     PAD_X = 0x00800000, PAD_R = 0x00400000, PAD_L = 0x00200000,
 };
 
+/* lo/hi are world coordinates for grid cells; for room objects they are relative to the owner's
+ * position, which is added at test time (the game keeps boxes actor-relative, 0x5c498) */
 typedef struct { float lo[3], hi[3]; int solid, trigger; RoomObject *owner; } Box;
 
 typedef struct { int kind, trigger, item; } Event;   /* kind 1 floor, 2 examine, 3 use item */
