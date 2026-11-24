@@ -112,8 +112,10 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
 
 - **2026-11-24** — 60 script game commands named from their handlers, covering about 95% of uses: actor position/rotation/visibility, area and camera switching, frame drawing, player and object animation, messages, sound and music, fades and stills, items, and room/script loading. The room scripts now read as plain cutscene and puzzle logic. Areas and cameras turn out to be script-driven in cutscenes and zone-driven in normal play.
 
+- **2026-11-24** — Exact camera projection recovered from the code: 256 px focal length on 320×240, with the eye 64 units behind the camera position, giving 50.19° vertical FOV. The renderer now uses it, so shots frame exactly as in the original. Also decoded: room-record fields +0x64/+0x68/+0x6C (billboard flags, draw routine, no-cull). That closes the room format.
+
 ## Next steps
 
-1. Camera field of view / projection from the renderer (`0x12ee4` → `0x13c50` / `0x14118`), checked against gameplay footage; calibrate the logic rate from the same footage.
-2. Start the engine: PC build that loads a room, draws it from the zone camera with HD textures, and runs its script.
-3. Messages: map `MESSAGE` ids to the `mes/` text files, then name the remaining rare commands as the engine needs them.
+1. Start the engine: PC build that loads a room, draws it from the zone camera with HD textures, and runs its script.
+2. Messages: map `MESSAGE` ids to the `mes/` text files, then name the remaining rare commands as the engine needs them.
+3. Calibrate the logic rate (the original has none) against gameplay footage once the PC build runs.

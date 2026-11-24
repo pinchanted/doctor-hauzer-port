@@ -52,7 +52,7 @@ Verified against `launchme`: loader `0x148dc`, object builder `0x149dc`, collisi
 | +0x0C | position x, y, z ✅ |
 | +0x18 | rotation x, y, z — 256 units per turn (11 objects game-wide, single axis) ✅ |
 | +0x24 | texture table, 16 entries: face tex `t` → bank index `table[t]` ✅ |
-| +0x64 / +0x68 / +0x6C | flags ❓ |
+| +0x64 / +0x68 / +0x6C | billboard bits / draw routine / no-cull (see Rendering) |
 | +0x70 | collidable/selectable 🟡 |
 | +0x74 | trigger id — matches the script's `ON (id, …)` handlers ✅ |
 | +0x78 | **area** ✅ — objects render and collide only while the global current area (`0x36698`) equals this. Area 0 is the room; areas 1+ are extra scenes in the same file. Room 001's areas 1 and 2 are the single- and double-door transition views. 1–5 areas per room. |
@@ -187,6 +187,22 @@ Overlap: centre distance is less than the sum of half sizes, on every axis.
 
 `RGB.bin` is a "mato" (*matome*, bundle) file: three tables of 16 RGB colours (5-bit), not used by the textured player; purpose TBD (likely lighting or effect colours).
 
+## Rendering and camera ✅ (projection) / 🟡 (draw paths)
+- **Projection** (`0x102BC`, called once at boot with `(−64, 192)`): a 16.16 reciprocal table at `0x72B58` (8000 entries) gives `screen = v · 256 / (z + 64) + centre`.
+  - The screen is 320×240; z is camera-space depth from the camera position, forward +z.
+  - So the focal length is **256 px**, the true eye is **64 units behind the camera position**, and the vertical FOV is **2·atan(120/256) = 50.19°** (64.0° horizontal).
+  - Points closer than z = 192 use a linear approximation instead of 1/d. Actors whose centre is behind z = −364 are culled.
+  - `tools/render_room.py` reproduces this (`GAME_FOV`, `game_camera()`).
+- **Draw loop** (`0x12EE4`): every visible actor in the current area is drawn. Actor fields +0x24/+0x28/+0x2C are copied from room-record +0x64/+0x68/+0x6C:
+
+  | Actor field | Meaning |
+  |---|---|
+  | +0x24 | billboard bits (1/2/4: copy the camera's x/y/z rotation so the object always faces the camera) |
+  | +0x28 | draw routine (0 → `0x13C50`, else `0x14118`) |
+  | +0x2C | skip the distance/visibility cull |
+
+- **Camera:** the camera is an actor (handle at `0x36698+0x2E8`). `CAMERA n` copies a room camera's eye and target into it and aims it (`0x12C2C` → `0x11B34`).
+
 ## Scripts — `macro/macroNNN`, `human/macroNNN` ✅ (core) / ✅ 60 game commands named / 🟡 rest
 Decoded from the VM in `launchme` (dispatcher `0xa500`, context struct at `0x35460`). Disassembler: `tools/macro_dis.py`.
 
@@ -223,12 +239,12 @@ The dispatcher executes opcode tokens and skips every other token, so assignment
 | +0 | visible |
 | +4…+0xC | position (16.16) |
 | +0x10…+0x18 | rotation (16.16, 256 per turn) |
-| +0x2C | flag (TBD) |
+| +0x2C | skip visibility cull |
 | +0x30 | area |
 
 | Group | Commands |
 |---|---|
-| Actors | `SET_POS`/`SET_ROT` actor,x,y,z · `ADD_POS`/`ADD_ROT` · `SHOW`/`HIDE` · `MOVE_FWD` actor,d · `LOOK_AT` a,b · `LOOK_AT_POINT` · `GET_X/Y/Z` · `ACTOR_AREA` · `ACTOR_FLAG` · `NO_COLLIDE` · `IF_TOUCH` a,b,L |
+| Actors | `SET_POS`/`SET_ROT` actor,x,y,z · `ADD_POS`/`ADD_ROT` · `SHOW`/`HIDE` · `MOVE_FWD` actor,d · `LOOK_AT` a,b · `LOOK_AT_POINT` · `GET_X/Y/Z` · `ACTOR_AREA` · `ACTOR_FLAG` (= no-cull, +0x2C) · `NO_COLLIDE` · `IF_TOUCH` a,b,L |
 | Scene | `AREA` n (current area, global `0x36698`) · `CAMERA` id (room camera table) · `CAMERA_RESET` (re-pick from the zone) · `DRAW` / `DRAW_B` / `DRAW_ROOM` (render a frame) · `CLEAR` · `FADE_OUT`/`FADE_IN` n · `PICTURE` n (full-screen still) · `SLEEP` vblanks |
 | Player | `PLAYER_POS` x,y,z · `PLAYER_AREA` · `SHOW_PLAYER`/`HIDE_PLAYER` · `PLAYER_ANIM` slot · `PLAYER_ANIM_CUT` · `PLAYER_ANIM_STEP` · `DEF_PLAYER_ANIM` · `ATTACH_PARTS` · `HOLD` mesh |
 | Objects | `OBJ_ANIM` · `OBJ_ANIM_STEP` · `DEF_OBJ_ANIM` (second animation table at `0x3C0E0`) |
@@ -239,7 +255,7 @@ The dispatcher executes opcode tokens and skips every other token, so assignment
 
 **More animation slots:** player animation slots go past 16. Close-up face animations live in later slots (e.g. 24), defined at boot and by `DEF_PLAYER_ANIM`.
 
-Unnamed so far: about 40 rare commands, plus the meaning of `ACTOR_FLAG` (+0x2C), `SE_76`, `FC60`, `FC7F`. Getters that write the preceding variable: FC63–65, FC7B–7C, FC8D–8F, FCB7–BC.
+Unnamed so far: about 40 rare commands, plus `SE_76`, `FC60`, `FC7F`. Getters that write the preceding variable: FC63–65, FC7B–7C, FC8D–8F, FCB7–BC.
 
 ## Text — `mes/` 🟡
 - `start.script`: ASCII room table — `ROOMnnn id x y z` (spawn position).

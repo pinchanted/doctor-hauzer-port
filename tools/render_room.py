@@ -16,10 +16,29 @@ import room as roomfmt
 from cel import Cel, to_image
 
 
+# The game's projection (launchme 0x102bc called with (-64, 192); used by the draw routines 0x13c50 /
+# 0x14118): screen = v * 256 / (z + 64) + centre on a 320x240 screen, z = camera-space depth from the
+# camera position. So the focal length is 256 px and the true eye sits 64 units behind the camera
+# position. Vertical FOV = 2*atan(120/256) = 50.19 deg (horizontal 64.0 deg at 4:3).
+# Within 256 units of the eye the game swaps 1/d for a linear approximation (not reproduced).
+GAME_FOV = math.degrees(2 * math.atan(120 / 256))
+GAME_EYE_BACK = 64
+
+
+def game_camera(eye, at):
+    """Camera table (eye, target) -> the eye the game actually projects from."""
+    e, a = np.array(eye, float), np.array(at, float)
+    f = (a - e) / np.linalg.norm(a - e)
+    return tuple(e - f * GAME_EYE_BACK), tuple(at)
+
+
 def look_at(eye, at, up=(0, -1, 0)):
     eye, at, up = map(lambda v: np.array(v, float), (eye, at, up))
     f = at - eye; f = f / np.linalg.norm(f)
-    r = np.cross(f, up); r = r / np.linalg.norm(r)
+    r = np.cross(f, up)
+    if np.linalg.norm(r) < 1e-6:        # looking straight up/down: pick another up vector
+        r = np.cross(f, np.array((0, 0, 1.0)))
+    r = r / np.linalg.norm(r)
     u = np.cross(r, f)
     return eye, np.stack([r, u, f])
 
@@ -154,7 +173,7 @@ if __name__ == '__main__':
     ap.add_argument('--cam', nargs=3, type=float, default=(350, -150, 550))
     ap.add_argument('--at', nargs=3, type=float, default=(-150, 100, -300))
     ap.add_argument('--w', type=int, default=960); ap.add_argument('--h', type=int, default=544)
-    ap.add_argument('--fov', type=float, default=60)
+    ap.add_argument('--fov', type=float, default=None, help='vertical; default: the game projection')
     ap.add_argument('--skip', nargs='*', type=int, default=[])
     ap.add_argument('--group', '--area', type=int, default=0, help='room area (0 = the room itself)')
     ap.add_argument('--camera', type=int, default=None, help="use the room's own camera N")
@@ -164,6 +183,8 @@ if __name__ == '__main__':
     a = ap.parse_args()
     rm = roomfmt.load(a.room)
     if a.camera is not None:
-        a.cam, a.at = rm.cameras[a.camera].eye, rm.cameras[a.camera].target
+        a.cam, a.at = game_camera(rm.cameras[a.camera].eye, rm.cameras[a.camera].target)
+    if a.fov is None:
+        a.fov = GAME_FOV
     render(rm, a.cam, a.at, a.w, a.h, a.fov, 1, set(a.skip), a.group,
            a.hd_dir, a.filter == 'bilinear', a.ssaa).save(a.out)

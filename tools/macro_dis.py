@@ -73,7 +73,7 @@ GAME = {
     0xfca1: 'ADD_ROT',        # actor, drx, dry, drz      (0x14c40)
     0xfcbd: 'SHOW',           # actor                     (0x14bc0: actor +0 = 1)
     0xfcbe: 'HIDE',           # actor                     (0x14bd8: actor +0 = 0)
-    0xfc93: 'ACTOR_FLAG',     # actor, v                  (0x103ec: actor +0x2c, meaning TBD)
+    0xfc93: 'NO_CULL',        # actor, v                  (0x103ec: actor +0x2c = skip visibility cull)
     0xfcc9: 'ACTOR_AREA',     # actor, area               (0x10388: actor +0x30)
     0xfca2: 'AREA',           # area                      (0x1037c: current area 0x36698)
     0xfcca: 'PLAYER_AREA',    # area                      (0x1c70: body, head, hands)

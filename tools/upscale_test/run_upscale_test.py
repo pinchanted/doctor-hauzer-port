@@ -94,7 +94,7 @@ RENDERS = [
     ('room301_cellar', 'room301', None, None, []),
     ('room303_frieze', 'room303', None, None, []),
 ]
-RENDER_W, RENDER_H, RENDER_FOV, RENDER_SSAA = 1920, 1080, 50, 2
+RENDER_W, RENDER_H, RENDER_FOV, RENDER_SSAA = 1920, 1080, 50.19, 2  # game projection: 2*atan(120/256)
 
 LOG = None
 
@@ -273,7 +273,7 @@ def render_job(args):
         import room as roomfmt, render_room
         r = roomfmt.load(os.path.join(ORGDATA, 'room', room + '.bin'))
         if cam is None and len(r.cameras) > 1:  # the room's own first gameplay camera
-            cam, at = r.cameras[1].eye, r.cameras[1].target
+            cam, at = render_room.game_camera(r.cameras[1].eye, r.cameras[1].target)
         if cam is None:
             xs = [v[0] for v in r.shell.verts]; zs = [v[2] for v in r.shell.verts]
             x0, x1, z0, z1 = min(xs), max(xs), min(zs), max(zs)
