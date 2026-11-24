@@ -42,6 +42,8 @@ int game_init(Game *g, const char *fs_dir) {
     return 0;
 }
 
+static void finish_script_frame(Game *g);
+
 static RoomObject *room_obj(Game *g, int h) {
     for (int i = 0; i < g->room.nobjects; i++) if (g->room.objects[i].id == h) return &g->room.objects[i];
     return NULL;
@@ -51,11 +53,15 @@ static RoomObject *room_obj(Game *g, int h) {
  * it), so a camera set by a script stays until the player walks into another zone. */
 static void pick_camera(Game *g) {
     int z = room_zone_at(&g->room, g->player.pos[0], g->player.pos[2]);
+    if (g->camera < 0) g->camera = g->room.ncams > 1 ? 1 : 0;
     if (g->cam_mode != CAM_ZONE) {
         if (z == g->cam_zone || g->script.suspended) return;
         g->cam_mode = CAM_ZONE;
     }
-    if (z >= 0 && z != 99 && z < g->room.ncams) g->camera = z;
+    if (z >= 0 && z != 99 && z < g->room.ncams && z != g->camera) {
+        g->camera = z;
+        g->zone_event = z + 10;          /* 0x4b8c fires event (zone + 10) when the camera changes */
+    }
 }
 
 static void script_takes_camera(Game *g, int mode) {
@@ -88,6 +94,8 @@ static int load_room_data(Game *g, int room_id, int script_id, int keep_player, 
     g->cam_mode = CAM_ZONE;
     g->camera = g->room.ncams > 1 ? 1 : 0;
     g->player_hidden = 0;
+    g->cam_reset_pending = 0;
+    memset(g->actor, 0, sizeof g->actor);
     pick_camera(g);
     if (r) render_set_room(r, &g->room);
     log_msg("room %03d (script %03d): %d objects, %d cameras, player (%g, %g, %g), camera %d", room_id, script_id,
@@ -118,10 +126,21 @@ void game_tick(Game *g, uint32_t pad) {
     if (g->msg_frames > 0) g->msg_frames--;
     if (g->script.suspended) {                       /* a cutscene is playing: the script owns the frame */
         script_resume(&g->script, g);
+        finish_script_frame(g);
         apply_pending(g);
         g->ticks++;
+        g->prev_pad = pad;
         return;
     }
+    /* the per-frame player code (0x4fb8) shows the body every frame, except in first person */
+    g->player_hidden = g->view_mode == 2;
+    if ((pad & PAD_L) && !(g->prev_pad & PAD_L)) {   /* L: cycle the view (0x4a9c) */
+        g->view_mode = (g->view_mode + 1) % 3;
+        if (g->view_mode == 0) game_camera_reset(g);
+        script_event(&g->script, g, g->view_mode == 0 ? 27 : g->view_mode == 1 ? 28 : 29, 0, 0);
+        log_msg("view mode %d", g->view_mode);
+    }
+    g->prev_pad = pad;
     int n = player_tick(&g->player, pad);
     anim_set(&g->anim, g->player.anim);
     anim_step(&g->anim, &g->human);
@@ -131,17 +150,23 @@ void game_tick(Game *g, uint32_t pad) {
         if (e->kind != 1) log_msg("event ON (%d, %d, %d)", e->trigger, e->kind, e->item);
         script_event(&g->script, g, e->trigger, e->kind, e->item);
     }
+    finish_script_frame(g);
     apply_pending(g);
     pick_camera(g);
+    if (g->zone_event && !g->script.suspended) { int e = g->zone_event; g->zone_event = 0; script_event(&g->script, g, e, 0, 0); }
     g->ticks++;
 }
 
+/* A script camera looks along +z at rotation 0 and turns the opposite way to objects (its angles
+ * build the world->camera transform): ry = 64 looks along -x (room 201's sliding-object scene). */
 static void forward_from_rot(const float rot[3], float f[3]) {
-    float z[3] = {0, 0, 1}, o[3] = {0, 0, 0};
-    obj_transform(o, rot, z, f);
+    float z[3] = {0, 0, 1}, o[3] = {0, 0, 0}, r[3] = {-rot[0], -rot[1], -rot[2]};
+    obj_transform(o, r, z, f);
 }
 
 void game_view(Game *g, float alpha, CameraView *cam) {
+    memset(cam->up, 0, sizeof cam->up);
+    cam->cull_shell = 0;
     if (g->cam_mode == CAM_ACTOR) {
         memcpy(cam->eye, g->cam_pos, sizeof cam->eye);
         if (g->cam_has_target) memcpy(cam->target, g->cam_target, sizeof cam->target);
@@ -160,8 +185,36 @@ void game_view(Game *g, float alpha, CameraView *cam) {
     float ry = g->prev_ry + d * alpha;
     for (int i = 0; i < g->anim.nverts; i++)
         for (int k = 0; k < 3; k++) body[i][k] = g->prev_body[i][k] + (g->anim.cur[i][k] - g->prev_body[i][k]) * alpha;
+    int normal = g->cam_mode != CAM_ACTOR && !g->script.suspended;
+    float k = 2.0f * 3.14159265f / 256.0f, fwd[3] = {-sinf(ry * k), 0, -cosf(ry * k)};
+    if (normal && g->view_mode == 1) {               /* overhead: 1500 above the player, looking down (0x4d14) */
+        for (int i = 0; i < 3; i++) cam->target[i] = pos[i];
+        cam->eye[0] = pos[0]; cam->eye[1] = pos[1] - 1500; cam->eye[2] = pos[2];
+        memcpy(cam->up, fwd, sizeof fwd);
+        cam->cull_shell = 1;
+    } else if (normal && g->view_mode == 2) {         /* first person: at the head marker (0x51f8) */
+        float rot[3] = {0, ry, 0}, h0[3], h1[3];
+        obj_transform(pos, rot, body[68], h0);
+        obj_transform(pos, rot, body[69], h1);
+        float d[3] = {h1[0] - h0[0], h1[1] - h0[1], h1[2] - h0[2]};
+        float l = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        if (l < 1e-3f) { memcpy(d, fwd, sizeof d); l = 1; }
+        for (int i = 0; i < 3; i++) { cam->eye[i] = h0[i]; cam->target[i] = h0[i] + d[i] / l * 1000; }
+    }
     trilist_reset(&g->player_tris);
+    trilist_reset(&g->overlay_tris);
     if (g->area == 0 && !g->player_hidden) human_build(&g->human, (const float (*)[3])body, pos, ry, &g->player_tris);
+    /* close-up head actors (handles 50-59 = HumanPol meshes 47-56), shown by cutscenes */
+    for (int h = 50; h < 60; h++) {
+        SmallActor *a = &g->actor[h];
+        int mi = h - 3;
+        if (!a->visible || a->area != g->area || mi >= g->human.nmesh) continue;
+        const Mesh *m = &g->human.mesh[mi];
+        static float wv[512][3];
+        int n = m->nverts < 512 ? m->nverts : 512;
+        for (int i = 0; i < n; i++) obj_transform(a->pos, a->rot, m->verts[i], wv[i]);
+        trilist_add_mesh(&g->overlay_tris, (const float (*)[3])wv, m, g->human.table[mi], 0);
+    }
 }
 
 void game_free(Game *g) {
@@ -170,6 +223,7 @@ void game_free(Game *g) {
     script_free(&g->script);
     human_free(&g->human);
     free(g->player_tris.v);
+    free(g->overlay_tris.v);
 }
 
 /* ---------------------------------------------------------------- actors for the script VM */
@@ -265,9 +319,13 @@ void game_camera_fixed(Game *g, int id) {
     g->camera = id;
 }
 
-void game_camera_reset(Game *g) {
-    g->cam_mode = CAM_ZONE;
-    pick_camera(g);
+/* 0x4d8c only invalidates the current camera; the per-frame camera code (0x4b8c) re-aims it on the
+ * next normal frame, i.e. after the script run that asked for it has finished */
+void game_camera_reset(Game *g) { g->cam_reset_pending = 1; }
+
+static void finish_script_frame(Game *g) {
+    if (g->script.suspended) return;
+    if (g->cam_reset_pending) { g->cam_reset_pending = 0; g->cam_mode = CAM_ZONE; g->camera = -1; }
 }
 
 void game_message(Game *g, int id, int time, int reset) {

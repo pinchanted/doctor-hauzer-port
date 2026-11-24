@@ -18,7 +18,7 @@ Native reimplementation of the 3DO game's engine, built from the formats and cod
 `run_hauzer.bat` - expects `..\extracted\fs` (the unpacked disc) and `..\assets_hd\textures`.
 
 Keys: arrows = d-pad · Z = A (examine) · X / Shift = B (run, push/pull) · C / Space = C (jump) ·
-Enter = Start · Q / W = L / R · **PageUp / PageDown = previous / next room** · **H = HD / original
+Enter = Start (skips cutscenes) · **Q = L: change view (fixed cameras / overhead / first person)** · W = R · **PageUp / PageDown = previous / next room** · **H = HD / original
 textures** · F12 = screenshot · Esc = quit. A game controller works too (A examine, X run, B jump).
 
 Options: `--room N`, `--hz N` (logic rate, default 20 - the original had no fixed rate),

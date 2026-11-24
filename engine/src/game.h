@@ -29,12 +29,16 @@ typedef struct Game {
     int cam_has_target;
     SmallActor actor[100];
     int player_hidden, skip_pressed;
+    int view_mode;            /* L button: 0 fixed cameras, 1 overhead, 2 first person (launchme 0x4a9c) */
+    int cam_reset_pending;    /* CAMERA_RESET takes effect when the script run ends (0x4b8c) */
+    uint32_t prev_pad;
+    int zone_event;
     int pending_room, pending_script, exit_requested;
     int msg_id, msg_frames;
     /* interpolation */
     float prev_pos[3], prev_ry;
     float prev_body[128][3];
-    TriList player_tris;
+    TriList player_tris, overlay_tris;
     uint64_t ticks;
     int spawn_count;
     struct { int id; float pos[3]; } spawns[64];

@@ -214,6 +214,7 @@ static void view_proj(const CameraView *cam, int w, int h, float V_out[16], floa
     norm3(f);
     float eye[3] = {cam->eye[0] - f[0] * GAME_EYE_BACK, cam->eye[1] - f[1] * GAME_EYE_BACK, cam->eye[2] - f[2] * GAME_EYE_BACK};
     float up[3] = {0, -1, 0}, r[3], u[3];
+    if (cam->up[0] || cam->up[1] || cam->up[2]) memcpy(up, cam->up, sizeof up);
     cross3(f, up, r);
     if (sqrtf(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]) < 1e-6f) { float z[3] = {0, 0, 1}; cross3(f, z, r); }
     norm3(r);
@@ -250,7 +251,8 @@ static void draw_batches(Renderer *r, GLuint vbo, const Batch *b, int nb, const 
     }
 }
 
-void render_frame(Renderer *r, const Room *room, int area, const CameraView *cam, const TriList *player, int w, int h) {
+void render_frame(Renderer *r, const Room *room, int area, const CameraView *cam, const TriList *player, const TriList *overlay,
+                  int w, int h) {
     glViewport(0, 0, w, h);
     glClearColor(0.06f, 0.06f, 0.08f, 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -268,18 +270,41 @@ void render_frame(Renderer *r, const Room *room, int area, const CameraView *cam
         const RoomObject *o = &room->objects[i];
         if (o->area != area || !o->visible) continue;
         if (i == 0 && getenv("HZ_NO_SHELL")) continue;
+        if (getenv("HZ_SKIP") && atoi(getenv("HZ_SKIP")) == o->id) continue;
+        /* cull test of the draw loop (0x12ee4 -> 0x13528): unless the object's +0x2C (record +0x6C) says
+         * otherwise, an object whose origin lies more than 364 units behind the camera is not drawn - this
+         * is how the game removes the wall between a fixed camera and the room */
+        if (!o->nocull6c) {
+            float d[3] = {o->pos[0] - cam->eye[0], o->pos[1] - cam->eye[1], o->pos[2] - cam->eye[2]};
+            float f[3] = {cam->target[0] - cam->eye[0], cam->target[1] - cam->eye[1], cam->target[2] - cam->eye[2]};
+            float fl = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+            if (fl > 1e-3f && (d[0] * f[0] + d[1] * f[1] + d[2] * f[2]) / fl < -364.0f) continue;
+        }
         p_glUniform1f(r->u_bias, i > 0 ? 2.0f : 0.0f);
+        /* room geometry is one-sided: fixed cameras sit on or behind walls, whose backs the 3DO never drew */
+        if (i == 0 || !getenv("HZ_CULL_SHELL_ONLY")) { glEnable(GL_CULL_FACE); glCullFace(GL_BACK); }
+        else glDisable(GL_CULL_FACE);
         model_matrix(o->pos, o->rot, M);
         mat_mul(MV, V, M);
         p_glUniformMatrix4fv(r->u_mv, 1, GL_FALSE, MV);
         draw_batches(r, r->geo[i].vbo, r->geo[i].b, r->geo[i].nb, r->room_tex, r->nroom_tex);
     }
+    glDisable(GL_CULL_FACE);
     if (player && player->nv) {
         p_glUniform1f(r->u_bias, 0.0f);
         p_glUniformMatrix4fv(r->u_mv, 1, GL_FALSE, V);
         p_glBindBuffer(GL_ARRAY_BUFFER, r->player_vbo);
         p_glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(sizeof(Vtx) * (size_t)player->nv), player->v, GL_STREAM_DRAW);
         draw_batches(r, r->player_vbo, player->b, player->nb, r->human_tex, r->nhuman_tex);
+    }
+    /* cutscene close-ups: the 3DO drew them after the room with no z-buffer, i.e. always on top */
+    if (overlay && overlay->nv) {
+        glClear(GL_DEPTH_BUFFER_BIT);
+        p_glUniform1f(r->u_bias, 0.0f);
+        p_glUniformMatrix4fv(r->u_mv, 1, GL_FALSE, V);
+        p_glBindBuffer(GL_ARRAY_BUFFER, r->player_vbo);
+        p_glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(sizeof(Vtx) * (size_t)overlay->nv), overlay->v, GL_STREAM_DRAW);
+        draw_batches(r, r->player_vbo, overlay->b, overlay->nb, r->human_tex, r->nhuman_tex);
     }
 }
 

@@ -1,8 +1,8 @@
 /* PC front end (SDL2). Also the headless test harness:
  *   hauzer --data <extracted/fs> [--hd <assets_hd/textures>] [--room N] [--hz 20]
  *          [--shot out.png --size 960x544 --input "UP*40,A,B+UP*10"]    (renders one frame and exits)
- * Keys: arrows = d-pad, Z = A (examine), X = B (run / handle), C = C (jump), Enter = Start,
- *       Q / W = L / R, PageUp/PageDown = previous/next room, H = toggle HD textures, F12 = screenshot.
+ * Keys: arrows = d-pad, Z = A (examine), X = B (run / handle), C = C (jump), Enter = Start (skip),
+ *       Q = L (change view: fixed / overhead / first person), W = R, PageUp/PageDown = previous/next room, H = toggle HD textures, F12 = screenshot.
  */
 #include "game.h"
 #include "render.h"
@@ -129,7 +129,7 @@ int main(int argc, char **argv) {
         if (camera >= 0 && camera < g.room.ncams) g.camera = camera;
         CameraView cam;
         game_view(&g, 1.0f, &cam);
-        render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, w, h);
+        render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, &g.overlay_tris, w, h);
         int rc = render_screenshot(w, h, shot);
         log_msg("room %03d area %d: player at (%g, %g, %g) ry %g, camera %d (mode %d) -> %s", g.room_id, g.area,
                 g.player.pos[0], g.player.pos[1], g.player.pos[2], g.player.ry, g.camera, g.cam_mode, shot);
@@ -179,7 +179,7 @@ int main(int argc, char **argv) {
         SDL_GL_GetDrawableSize(win, &dw, &dh);
         CameraView cam;
         game_view(&g, (float)(acc / step), &cam);
-        render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, dw, dh);
+        render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, &g.overlay_tris, dw, dh);
         SDL_GL_SwapWindow(win);
     }
     render_destroy(rnd);
