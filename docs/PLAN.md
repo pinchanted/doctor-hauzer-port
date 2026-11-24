@@ -106,7 +106,7 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
 
 ## Next steps
 
-1. Player model and animation format (`HumanPol.bin`) — needed to put Hauzer's visitor in the rooms.
+1. Player model and animation format (`HumanPol.bin`) — needed to put the player character in the rooms.
 2. Name the game commands (`0xFC60–0xFCCF`), starting with the most frequent; find what sets the current area and camera.
 3. Camera field of view / projection from the renderer (`0x12ee4` → `0x13c50` / `0x14118`), checked against gameplay footage.
 4. Start the engine: PC build that loads a room, draws it from the zone camera with HD textures, and runs its script.
