@@ -10,3 +10,4 @@ typedef struct {
 
 int cel_decode(const uint8_t *data, size_t size, Image *out);   /* 0 on success */
 void image_free(Image *im);
+int img_decode(const uint8_t *data, size_t size, Image *out);  /* .img / full-screen CEL still */

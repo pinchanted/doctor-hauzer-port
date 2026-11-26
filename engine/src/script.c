@@ -1,4 +1,5 @@
 #include "script.h"
+#include "ui.h"
 #include "game.h"
 #include "audio.h"
 #include <stdlib.h>
@@ -102,7 +103,7 @@ static void run(Script *s, Game *g) {
         case 0xfc08: {                                                                   /* ON v L */
             int a = op(s, 0), l = raw_at(s, 1);
             s->pc += 6;
-            if (s->event[0] == a) s->pc = l * 2;
+            if (s->event[0] == a) { s->pc = l * 2; s->matched = 1; }
             break;
         }
         case 0xfc09:                                                                     /* CALL */
@@ -138,7 +139,7 @@ static void run(Script *s, Game *g) {
         case 0xfc11: {                                                                   /* ON (a, b, c) L */
             int a = op(s, 0), b = op(s, 1), c = op(s, 2), l = raw_at(s, 3);
             s->pc += 10;
-            if (s->event[0] == a && s->event[1] == b && s->event[2] == c) s->pc = l * 2;
+            if (s->event[0] == a && s->event[1] == b && s->event[2] == c) { s->pc = l * 2; s->matched = 1; }
             break;
         }
         case 0xfcc1: case 0xfcc2: { int n = op(s, 0); if (n >= 0 && n < 32) g_flags[n] = v == 0xfcc1; s->pc += 4; break; }
@@ -167,7 +168,7 @@ static void run(Script *s, Game *g) {
 void script_event(Script *s, Game *g, int a, int b, int c) {
     if (!s->w) return;
     s->pc = 0; s->started = 0; s->yield = 0; s->suspended = 0; s->wait = 0;
-    s->ncall = 0; s->nfor = 0; s->mark = 0;
+    s->ncall = 0; s->nfor = 0; s->mark = 0; s->matched = 0;
     s->event[0] = a; s->event[1] = b; s->event[2] = c;
     run(s, g);
 }
@@ -230,6 +231,15 @@ static void game_op(Script *s, Game *g, int opc) {
     case 0xfca9: g->pending_room = a0; break;                                          /* LOAD_ROOM */
     case 0xfcc6: g->pending_script = a0; break;                                        /* LOAD_SCRIPT */
     case 0xfcc5: g->exit_requested = 1; break;                                         /* EXIT */
+    case 0xfcc0: { int l = raw_at(s, 1); s->pc = next; if (game_has_item(g, a0)) s->pc = l * 2; return; }   /* IF_ITEM */
+    case 0xfc99: game_remove_item(g, a0); break;                                       /* ITEM_SLOT: used up */
+    case 0xfcc4: {                                                                     /* ITEM_SCREEN item, L */
+        int l = raw_at(s, 1);
+        s->pc = next;
+        if (ui_open_pickup(g, a0, l * 2)) { s->suspended = 1; s->wait = 1 << 30; }
+        return;
+    }
+    case 0xfcb0: s->pc = next; if (ui_open_picture(g, a0)) { s->suspended = 1; s->wait = 1 << 30; } return;   /* PICTURE */
     default: break;                                                                    /* not modelled yet */
     }
     (void)a3;

@@ -15,5 +15,10 @@ const uint32_t *messages_get(const Messages *m, int id);
 void messages_free(Messages *m);
 
 int text_init(const char *font_path);
-/* white text with a soft shadow on a translucent rounded panel; straight-alpha RGBA */
+enum { TEXT_PANEL, TEXT_SHADOW, TEXT_INK };
+/* lines split at '\n' and centred; straight-alpha RGBA */
+int text_render(const uint32_t *cp, int px, int style, Image *out);
+int text_utf8(const char *s, uint32_t *out, int cap);
+int text_sjis(const char *s, uint32_t *out, int cap);
+/* white text with a soft shadow on a translucent rounded panel */
 int text_render_box(const uint32_t *cp, int px, Image *out);

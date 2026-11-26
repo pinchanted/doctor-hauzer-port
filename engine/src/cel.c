@@ -121,3 +121,43 @@ int cel_decode(const uint8_t *data, size_t size, Image *out) {
 }
 
 void image_free(Image *im) { free(im->rgba); im->rgba = NULL; }
+
+/* 3DO IMAG pictures (.img: 16 bpp, linear or LRform) and full-screen CEL stills (the English patch).
+ * Port of tools/img2png.py. */
+static const uint8_t *find4(const uint8_t *d, size_t n, const char *tag) {
+    for (size_t i = 0; i + 4 <= n; i++) if (!memcmp(d + i, tag, 4)) return d + i;
+    return NULL;
+}
+
+int img_decode(const uint8_t *d, size_t n, Image *out) {
+    memset(out, 0, sizeof *out);
+    const uint8_t *i = find4(d, n, "IMAG"), *p = find4(d, n, "PDAT");
+    int w, h, bpr, lr;
+    if (i && (size_t)(i - d) + 27 <= n) {
+        w = be32(i + 8); h = be32(i + 12); bpr = be32(i + 16);
+        if (i[20] != 16) return -1;
+        lr = i[26] == 1;
+    } else {
+        const uint8_t *c = find4(d, n, "CCB ");
+        if (!c || (size_t)(c - d) + 8 + 72 > n) return -1;
+        const uint8_t *b = c + 8;
+        uint32_t pre0 = (uint32_t)be32(b + 56), pre1 = (uint32_t)be32(b + 60);
+        w = be32(b + 64); h = be32(b + 68);
+        if ((pre0 & 7) != 6) return -1;
+        lr = (pre1 >> 11) & 1;
+        bpr = lr ? w * 4 : w * 2;
+    }
+    if (!p || w <= 0 || h <= 0 || w > 2048 || h > 2048) return -1;
+    const uint8_t *pix = p + 8, *end = d + n;
+    out->w = w; out->h = h;
+    out->rgba = calloc((size_t)w * h, 4);
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            const uint8_t *q = lr ? pix + (size_t)(y / 2) * w * 4 + x * 4 + (y & 1) * 2 : pix + (size_t)y * bpr + x * 2;
+            if (q + 2 > end) continue;
+            int v = q[0] << 8 | q[1], r = (v >> 10) & 31, g = (v >> 5) & 31, bl = v & 31;
+            uint8_t *o = out->rgba + 4 * ((size_t)y * w + x);
+            o[0] = (uint8_t)(r << 3 | r >> 2); o[1] = (uint8_t)(g << 3 | g >> 2); o[2] = (uint8_t)(bl << 3 | bl >> 2); o[3] = 255;
+        }
+    return 0;
+}

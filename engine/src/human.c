@@ -44,6 +44,37 @@ int human_load(HumanModel *h, const char *orgdata, const char *launchme) {
         h->tex_ptr[h->ntex] = h->itemtex.data + be32(h->itemtex.data + 4 + 8 * i);
         h->tex_size[h->ntex] = (uint32_t)be32(h->itemtex.data + 8 + 8 * i);
     }
+    /* items */
+    path_join(p, sizeof p, orgdata, "item/ItemPol.bin"); h->itempol = blob_load(p);
+    if (h->itempol.data) {
+        /* the loader at 0x32e4 puts mesh k (texture table 0x32bfc + 0x80*k) in actor handle 220 + k, and
+         * item id k's record names handle 220 + k: mesh 0 is the dummy item */
+        int ni = be32(h->itempol.data);
+        if (ni > ITEM_COUNT) ni = ITEM_COUNT;
+        for (int i = 0; i < ni; i++) {
+            mesh_read(h->itempol.data, h->itempol.size, (size_t)be32(h->itempol.data + 4 + 8 * i), &h->item_mesh[i]);
+            for (int t = 0; t < 16; t++) {
+                uint32_t a = 0x32bfc + 0x80u * (uint32_t)i;
+                int typ = be32(exe.data + a + 8 * t), val = be32(exe.data + a + 4 + 8 * t);
+                h->item_table[i][t] = typ == 3 ? h->n_human + val : typ == 2 ? val : -1;
+            }
+        }
+        h->nitem = ni;
+    }
+    for (int id = 0; id < ITEM_COUNT; id++) {
+        const uint8_t *e = exe.data + 0x35c8c + 56 * id;
+        for (int k = 0; k < 3; k++) h->item_spin[id][k] = be32(e + 4 + 4 * k);
+        memcpy(h->item_name_sjis[id], e + 16, 39);
+        h->item_name_sjis[id][39] = 0;
+        int k = 0;
+        for (; k < 8; k++) {
+            int v = be32(exe.data + 0x34894 + 32 * id + 4 * k);
+            if (v < 0 || v >= 49) break;
+            h->item_pages[id][k] = v;
+        }
+        if (k < 8) h->item_pages[id][k] = -1;
+        if (id > 34) h->item_pages[id][0] = -1;   /* the table only covers ids 0..34 */
+    }
     for (int i = 0; i < n; i++) {
         uint32_t a = table_for_mesh(i);
         for (int t = 0; t < 16; t++) {
@@ -55,8 +86,18 @@ int human_load(HumanModel *h, const char *orgdata, const char *launchme) {
     return 0;
 }
 
+const char *const ITEM_PAGE_FILE[49] = {
+    "sea01", "sea02", "sea03", "sea04", "sea05", "sea06", "sea07", "sea08", "sea09", "sea10",
+    "sea11_01", "sea11_02", "sea11_03", "sea11_04", "sea12_01", "sea12_02", "sea12_03",
+    "sea13_01", "sea13_02", "sea13_03", "sea13_04", "sea13_05",
+    "sea14_01", "sea14_02", "sea14_03", "sea14_04", "sea14_05", "sea14_06",
+    "sea15", "sea16", "sea17", "sea18", "sea19_01", "sea19_02", "sea20", "sea21", "sea22", "sea23", "sea24",
+    "sea25", "sea26", "sea27", "sea28", "sea29", "sea30", "sea31", "sea32", "sea33", "sea34"};
+
 void human_free(HumanModel *h) {
     for (int i = 0; i < h->nmesh; i++) mesh_free(&h->mesh[i]);
+    for (int i = 0; i < h->nitem; i++) mesh_free(&h->item_mesh[i]);
+    blob_free(&h->itempol);
     blob_free(&h->pol); blob_free(&h->tex); blob_free(&h->itemtex);
 }
 

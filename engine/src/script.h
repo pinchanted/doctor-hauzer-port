@@ -25,6 +25,7 @@ typedef struct {
     int for_pc[16], for_step[16], for_to[16], nfor;
     int mark;
     int steps;
+    int matched;         /* an ON line of this run took its jump (a handler exists for the event) */
 } Script;
 
 extern int g_globals[256];

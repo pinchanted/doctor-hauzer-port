@@ -57,6 +57,8 @@ struct Renderer {
     GLuint *human_tex; int nhuman_tex;
     GLuint player_vbo;
     float anisotropy;
+    struct { uint64_t key; GLuint tex; int w, h; unsigned used; } ui[48];
+    unsigned ui_clock;
 };
 
 /* u_bias pulls a vertex toward the camera in view space (world units): room objects such as doors
@@ -71,7 +73,7 @@ static const char *FS =
     "varying vec2 v_uv;\nuniform sampler2D u_tex;\nuniform float u_mode;\nuniform float u_alpha;\n"
     "void main() { vec4 c = texture2D(u_tex, v_uv);\n"
     "  if (u_mode < 0.5) { if (c.a < 0.5) discard; gl_FragColor = vec4(c.rgb / c.a, 1.0); }\n"
-    "  else if (u_mode < 1.5) gl_FragColor = c;\n"
+    "  else if (u_mode < 1.5) gl_FragColor = c * u_alpha;\n"
     "  else gl_FragColor = vec4(0.0, 0.0, 0.0, u_alpha); }\n";
 
 static GLuint compile(GLenum type, const char *src, int gles) {
@@ -322,6 +324,7 @@ void render_frame(Renderer *r, const Room *room, int area, const CameraView *cam
 int render_screenshot(int w, int h, const char *path) {
     uint8_t *px = malloc((size_t)w * h * 4);
     glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px);
+    for (size_t i = 0; i < (size_t)w * h; i++) px[4 * i + 3] = 255;   /* what is on screen, not the alpha channel */
     stbi_flip_vertically_on_write(1);
     int ok = stbi_write_png(path, w, h, 4, px, w * 4);
     free(px);
@@ -349,6 +352,7 @@ void render_overlay(Renderer *r, int key, const Image *img, int x, int y, int sw
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);      /* texture is premultiplied */
     p_glUseProgram(r->prog);
     p_glUniform1f(r->u_mode, 1.0f);
+    p_glUniform1f(r->u_alpha, 1.0f);
     p_glUniform1f(r->u_bias, 0.0f);
     p_glUniformMatrix4fv(r->u_mv, 1, GL_FALSE, I);
     p_glUniformMatrix4fv(r->u_proj, 1, GL_FALSE, P);
@@ -389,4 +393,120 @@ void render_dim(Renderer *r, float a, int sw, int sh) {
     glDisable(GL_BLEND);
     glEnable(GL_DEPTH_TEST);
     p_glUniform1f(r->u_mode, 0.0f);
+}
+
+/* ---------------------------------------------------------------- UI layer */
+static int ui_find(Renderer *r, uint64_t key) {
+    for (int i = 0; i < 48; i++) if (r->ui[i].tex && r->ui[i].key == key) return i;
+    return -1;
+}
+
+int render_ui_has(Renderer *r, uint64_t key) { return ui_find(r, key) >= 0; }
+
+void render_ui_put(Renderer *r, uint64_t key, const Image *img) {
+    if (!img || !img->rgba) return;
+    int i = ui_find(r, key);
+    if (i < 0) {
+        int lru = 0;
+        for (int k = 0; k < 48; k++) {
+            if (!r->ui[k].tex) { lru = k; break; }
+            if (r->ui[k].used < r->ui[lru].used) lru = k;
+        }
+        i = lru;
+    }
+    if (r->ui[i].tex) glDeleteTextures(1, &r->ui[i].tex);
+    r->ui[i].tex = upload_rgba(r, img->rgba, img->w, img->h);
+    r->ui[i].key = key; r->ui[i].w = img->w; r->ui[i].h = img->h; r->ui[i].used = ++r->ui_clock;
+}
+
+int render_ui_size(Renderer *r, uint64_t key, int *w, int *h) {
+    int i = ui_find(r, key);
+    if (i < 0) return -1;
+    *w = r->ui[i].w; *h = r->ui[i].h;
+    return 0;
+}
+
+static void draw_quad2d(Renderer *r, GLuint tex, float x, float y, float w, float h, float alpha, int mode, int sw, int sh) {
+    float x0 = x, y0 = y, x1 = x + w, y1 = y + h;
+    Vtx v[6] = {{{x0, y0, 0}, {0, 0}}, {{x1, y0, 0}, {1, 0}}, {{x1, y1, 0}, {1, 1}},
+                {{x0, y0, 0}, {0, 0}}, {{x1, y1, 0}, {1, 1}}, {{x0, y1, 0}, {0, 1}}};
+    float I[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    float P[16] = {2.0f / sw, 0, 0, 0, 0, -2.0f / sh, 0, 0, 0, 0, 1, 0, -1, 1, 0, 1};
+    glViewport(0, 0, sw, sh);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    p_glUseProgram(r->prog);
+    p_glActiveTexture(GL_TEXTURE0);
+    p_glUniform1i(r->u_tex, 0);
+    p_glEnableVertexAttribArray(0);
+    p_glEnableVertexAttribArray(1);
+    p_glUniform1f(r->u_mode, (float)mode);
+    p_glUniform1f(r->u_alpha, alpha);
+    p_glUniform1f(r->u_bias, 0.0f);
+    p_glUniformMatrix4fv(r->u_mv, 1, GL_FALSE, I);
+    p_glUniformMatrix4fv(r->u_proj, 1, GL_FALSE, P);
+    p_glBindBuffer(GL_ARRAY_BUFFER, r->ovl_vbo);
+    p_glBufferData(GL_ARRAY_BUFFER, sizeof v, v, GL_STREAM_DRAW);
+    p_glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vtx), (void *)0);
+    p_glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vtx), (void *)(sizeof(float) * 3));
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDisable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+    p_glUniform1f(r->u_mode, 0.0f);
+    p_glUniform1f(r->u_alpha, 1.0f);
+}
+
+void render_ui_draw(Renderer *r, uint64_t key, float x, float y, float w, float h, float alpha, int sw, int sh) {
+    int i = ui_find(r, key);
+    if (i < 0 || alpha <= 0) return;
+    r->ui[i].used = ++r->ui_clock;
+    draw_quad2d(r, r->ui[i].tex, x, y, w, h, alpha, 1, sw, sh);
+}
+
+/* black (a = opacity) rectangle in screen pixels */
+void render_ui_rect(Renderer *r, float x, float y, float w, float h, float a, int sw, int sh) {
+    if (a <= 0) return;
+    glEnable(GL_SCISSOR_TEST);
+    glScissor((int)x, sh - (int)(y + h), (int)w, (int)h);
+    render_dim(r, a, sw, sh);
+    glDisable(GL_SCISSOR_TEST);
+}
+
+/* clear the screen to black */
+void render_clear(int sw, int sh) {
+    glViewport(0, 0, sw, sh);
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+/* player/item triangles seen from `cam`, drawn into the screen rectangle (x, y, w, h) on top of what is
+ * there (depth cleared inside the rectangle) */
+void render_model(Renderer *r, const TriList *t, const CameraView *cam, int x, int y, int w, int h, int sw, int sh) {
+    if (!t || !t->nv || w <= 0 || h <= 0) return;
+    glViewport(x, sh - (y + h), w, h);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(x, sh - (y + h), w, h);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    p_glUseProgram(r->prog);
+    p_glActiveTexture(GL_TEXTURE0);
+    p_glUniform1i(r->u_tex, 0);
+    p_glEnableVertexAttribArray(0);
+    p_glEnableVertexAttribArray(1);
+    p_glUniform1f(r->u_mode, 0.0f);
+    p_glUniform1f(r->u_bias, 0.0f);
+    float V[16], P[16];
+    view_proj(cam, w, h, V, P);
+    p_glUniformMatrix4fv(r->u_proj, 1, GL_FALSE, P);
+    p_glUniformMatrix4fv(r->u_mv, 1, GL_FALSE, V);
+    p_glBindBuffer(GL_ARRAY_BUFFER, r->player_vbo);
+    p_glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(sizeof(Vtx) * (size_t)t->nv), t->v, GL_STREAM_DRAW);
+    draw_batches(r, r->player_vbo, t->b, t->nb, r->human_tex, r->nhuman_tex);
+    glDisable(GL_SCISSOR_TEST);
+    glViewport(0, 0, sw, sh);
 }

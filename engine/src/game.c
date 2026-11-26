@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /* start.script: "ROOM001  1 x y z ..." (room table with spawn positions) */
 static void load_spawns(Game *g) {
@@ -45,7 +46,54 @@ int game_init(Game *g, const char *fs_dir, const char *text_override) {
     messages_load(&g->mes, mes, exe, text_override);
     /* the original counted message time in rendered frames; it drew rooms at roughly 10 fps */
     g->msg_scale_num = 1; g->msg_scale_den = 10;
+    /* images/image.scp: picture paths, one per line (PICTURE n, 0-based) */
+    {
+        char p[1200];
+        path_join(p, sizeof p, g->orgdata, "images/image.scp");
+        Blob b = blob_load(p);
+        int n = 0;
+        for (size_t i = 0, st = 0; b.data && i <= b.size && n < 32; i++) {
+            if (i == b.size || b.data[i] == '\r' || b.data[i] == '\n') {
+                if (i > st) {
+                    size_t a = st;
+                    for (size_t k = st; k < i; k++) if (b.data[k] == '/') a = k + 1;
+                    size_t len = i - a < 31 ? i - a : 31;
+                    memcpy(g->image_names[n], b.data + a, len);
+                    g->image_names[n][len] = 0;
+                    n++;
+                }
+                st = i + 1;
+            }
+        }
+        blob_free(&b);
+    }
+    g->last_save_slot = -1;
     return 0;
+}
+
+const char *game_image_name(const Game *g, int n) {
+    return n >= 0 && n < 32 && g->image_names[n][0] ? g->image_names[n] : NULL;
+}
+
+/* ---------------------------------------------------------------- inventory */
+int game_has_item(const Game *g, int item) {
+    for (int i = 0; i < 40; i++) if (g->items[i] == item) return 1;
+    return 0;
+}
+
+int game_add_item(Game *g, int item) {
+    for (int i = 0; i < 40; i++) if (!g->items[i]) { g->items[i] = item; log_msg("  item %d added", item); return 1; }
+    return 0;
+}
+
+void game_remove_item(Game *g, int item) {
+    int i = 0;
+    while (i < 40 && g->items[i] != item) i++;
+    if (i == 40) return;
+    memmove(&g->items[i], &g->items[i + 1], sizeof(int) * (size_t)(39 - i));
+    g->items[39] = 0;
+    if (g->item_cursor > 0) g->item_cursor--;
+    log_msg("  item %d removed", item);
 }
 
 static void message_tick(Game *g) {
@@ -102,6 +150,7 @@ static int load_room_data(Game *g, int room_id, int script_id, int keep_player, 
     script_free(&g->script);
     g->room = nr;
     g->room_id = room_id;
+    g->script_id = script_id;
     g->area = 0;
     snprintf(name, sizeof name, "macro/macro%03d", script_id);
     path_join(path, sizeof path, g->orgdata, name);
@@ -169,6 +218,8 @@ float game_fade_level(const Game *g, float alpha) {
 static void new_game(Game *g) {
     memset(g_globals, 0, sizeof g_globals);
     memset(g_flags, 0, sizeof g_flags);
+    memset(g->items, 0, sizeof g->items);
+    g->item_cursor = 0;
     g->view_mode = 0;
     g->fade_from = 1.0f; g->fade_to = 0.0f; g->fade_t = 0; g->fade_n = g->hz; g->fade_snap_back = 0;
     load_room_data(g, 1, 1, 0, g->renderer);
@@ -189,6 +240,12 @@ void game_tick(Game *g, uint32_t pad) {
     memcpy(g->prev_pos, g->player.pos, sizeof g->prev_pos);
     g->prev_ry = g->player.ry;
     memcpy(g->prev_body, g->anim.cur, sizeof g->prev_body);
+    if (g->ui.mode != UI_NONE) {                     /* a menu / picture / prompt owns the frame */
+        ui_tick(g, pad);
+        g->prev_pad = pad;
+        g->ticks++;
+        return;
+    }
     g->skip_pressed = (pad & (PAD_START | PAD_X)) != 0;
     message_tick(g);
     if (g->script.suspended) {                       /* a cutscene is playing: the script owns the frame */
@@ -206,6 +263,25 @@ void game_tick(Game *g, uint32_t pad) {
         if (g->view_mode == 0) game_camera_reset(g);
         script_event(&g->script, g, g->view_mode == 0 ? 27 : g->view_mode == 1 ? 28 : 29, 0, 0);
         log_msg("view mode %d", g->view_mode);
+    }
+    if (g->use_item) {                               /* "use" from the menu (0x55bc) */
+        int it = g->use_item, matched = 0;
+        g->use_item = 0;
+        if (it == 28) { ui_open_save(g); g->prev_pad = pad; return; }   /* the notebook saves (0xdcc8) */
+        int t = player_probe(&g->player);            /* state 13: the trigger in front, event (t, 3, item) */
+        log_msg("use item %d (trigger %d)", it, t);
+        if (t) { script_event(&g->script, g, t, 3, it); matched |= g->script.matched; }
+        if (!g->script.suspended) { script_event(&g->script, g, it + 100, 0, 0); matched |= g->script.matched; }
+        if (!matched && !g->script.suspended) game_message(g, it < 11 ? 400 : 401, 16, 1);
+        finish_script_frame(g);
+        apply_pending(g);
+        g->prev_pad = pad;
+        return;
+    }
+    if ((pad & PAD_START) && !(g->prev_pad & PAD_START)) {   /* Start: the item menu (0x55a8) */
+        ui_open_menu(g);
+        g->prev_pad = pad;
+        return;
     }
     g->prev_pad = pad;
     int n = player_tick(&g->player, pad);
@@ -301,6 +377,7 @@ void game_free(Game *g) {
     human_free(&g->human);
     free(g->player_tris.v);
     free(g->overlay_tris.v);
+    free(g->ui_tris.v);
     messages_free(&g->mes);
 }
 
@@ -410,4 +487,91 @@ void game_message(Game *g, int id, int time, int reset) {
     if (reset) { memset(g->mq, 0, sizeof g->mq); g->msg_frames = 0; g->mq[0].id = id; g->mq[0].time = time; }
     else for (int i = 0; i < 32; i++) if (g->mq[i].time == 0) { g->mq[i].id = id; g->mq[i].time = time; break; }
     log_msg("  MESSAGE %d (time %d%s)", id, time, reset ? ", new box" : "");
+}
+
+/* ---------------------------------------------------------------- saves */
+typedef struct {
+    char magic[4];
+    int32_t version, room, script, area;
+    float pos[3], ry;
+    int32_t globals[256], flags[32], items[40], cursor;
+    int64_t saved_at;
+} SaveFile;
+
+static void save_path(const Game *g, int slot, char *out, size_t cap) {
+    char name[32];
+    snprintf(name, sizeof name, "hauzer%d.sav", slot + 1);
+    path_join(out, cap, g->save_dir[0] ? g->save_dir : ".", name);
+}
+
+int game_save(Game *g, int slot) {
+    SaveFile s;
+    memset(&s, 0, sizeof s);
+    memcpy(s.magic, "HZSV", 4);
+    s.version = 1; s.room = g->room_id; s.script = g->script_id; s.area = g->area;
+    memcpy(s.pos, g->player.pos, sizeof s.pos); s.ry = g->player.ry;
+    memcpy(s.globals, g_globals, sizeof s.globals);
+    memcpy(s.flags, g_flags, sizeof s.flags);
+    memcpy(s.items, g->items, sizeof s.items);
+    s.cursor = g->item_cursor;
+    s.saved_at = (int64_t)time(NULL);
+    char p[1200];
+    save_path(g, slot, p, sizeof p);
+    FILE *f = fopen(p, "wb");
+    if (!f) { log_msg("save: cannot write %s", p); return -1; }
+    int ok = fwrite(&s, sizeof s, 1, f) == 1;
+    fclose(f);
+    log_msg("saved slot %d (room %03d) -> %s", slot + 1, g->room_id, p);
+    return ok ? 0 : -1;
+}
+
+static int read_save(const Game *g, int slot, SaveFile *s) {
+    char p[1200];
+    save_path(g, slot, p, sizeof p);
+    FILE *f = fopen(p, "rb");
+    if (!f) return -1;
+    int ok = fread(s, sizeof *s, 1, f) == 1 && !memcmp(s->magic, "HZSV", 4) && s->version == 1;
+    fclose(f);
+    return ok ? 0 : -1;
+}
+
+int game_save_info(const Game *g, int slot, char *out, int cap) {
+    SaveFile s;
+    if (read_save(g, slot, &s)) return -1;
+    time_t t = (time_t)s.saved_at;
+    struct tm *tm = localtime(&t);
+    char when[64] = "";
+    if (tm) strftime(when, sizeof when, "%Y-%m-%d %H:%M", tm);
+    int items = 0;
+    while (items < 40 && s.items[items]) items++;
+    if (g->english) snprintf(out, (size_t)cap, "Room %03d   %d items   %s", s.room, items, when);
+    else snprintf(out, (size_t)cap, "部屋 %03d   持ち物 %d   %s", s.room, items, when);
+    return 0;
+}
+
+int game_load_save(Game *g, int slot) {
+    SaveFile s;
+    if (read_save(g, slot, &s)) return -1;
+    memcpy(g_globals, s.globals, sizeof s.globals);
+    memcpy(g_flags, s.flags, sizeof s.flags);
+    memcpy(g->items, s.items, sizeof g->items);
+    g->item_cursor = s.cursor;
+    memcpy(g->player.pos, s.pos, sizeof s.pos);
+    g->player.ry = s.ry;
+    g->view_mode = 0;
+    g->ui.mode = UI_NONE;
+    g->gameover = 0;
+    if (load_room_data(g, s.room, s.script, 1, g->renderer)) return -1;
+    if (!g->script.suspended) {                      /* the entry script may have placed the player for a door */
+        memcpy(g->player.pos, s.pos, sizeof s.pos);
+        g->player.ry = s.ry;
+        memcpy(g->prev_pos, s.pos, sizeof s.pos);
+        g->prev_ry = s.ry;
+        if (s.area) game_set_area(g, s.area);
+        g->cam_mode = CAM_ZONE; g->camera = -1;
+        pick_camera(g);
+    }
+    g->last_save_slot = slot;
+    log_msg("loaded slot %d (room %03d)", slot + 1, s.room);
+    return 0;
 }

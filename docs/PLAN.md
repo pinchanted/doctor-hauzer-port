@@ -136,9 +136,14 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
   - **Text:** `tools/make_text_en.py` turns its all-caps text into sentence case for the engine's font, and adds English for the two messages the patch missed (ids 400/401, which live in the exe). The engine shows English by default (`--jp` for Japanese).
   - **Stills:** the patched stills (examine pages, controls, ending text) are stored as CELs, not IMAG. `img2png.py` now reads both, and `tools/upscale_english.bat` upscales them into `assets_hd/stills_en`.
 
+- **2026-11-26** — **Items, menus and saves.**
+  - **Decoded from the exe:** item models (item id = `ItemPol` mesh), names, idle spin, examine page lists, the inventory routines, the Start menu, item use, the pick-up prompt and `PICTURE` (`docs/FORMATS.md`, "Items, inventory and menus").
+  - **In the engine (`ui.c`):** Start opens the item menu; the item turns in the spotlight, rendered at full resolution with HD textures. Use runs the room's handlers or says the key doesn't work. Examine shows the 4× upscaled pages (English set when playing in English) with the model beside them; the diaries turn pages. Scripts' item pick-ups (Yes/No), `IF_ITEM`, used-up items and full-screen pictures all work. The notebook (item 28) saves to 3 slots; F1–F3 load and `--load N` starts from a save.
+  - **English lettering:** the 4× upscaled English pages read cleanly, so re-lettering them is optional polish. One gap in the fan patch: the vase's page (`sea22`) is still in Japanese.
+
 ## Next steps
 
-1. Items and inventory, the Start menu and examine pictures (`PICTURE`, the `isearch/` stills, using the 4× upscales).
-2. Re-letter the English examine pages at full resolution: an AI-upscaled paper background with the text drawn by the engine, rather than upscaled 320×240 lettering.
-3. Face animations in cutscenes (player slots 17+), room 211's cutscene camera, FMV (title, game over, ending).
+1. Title screen with New game / Continue (loads the notebook saves), and FMV (opening, game over, ending).
+2. Re-letter the untranslated vase page (`sea22`); optional: re-letter all English pages at full resolution.
+3. Face animations in cutscenes (player slots 17+), room 211's cutscene camera.
 4. Calibrate the logic rate (the original has none) against gameplay footage, now that the PC build runs.

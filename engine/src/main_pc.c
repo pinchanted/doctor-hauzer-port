@@ -3,6 +3,9 @@
  *          [--shot out.png --size 960x544 --input "UP*40,A,B+UP*10"]    (renders one frame and exits)
  * Keys: arrows = d-pad, Z = A (examine), X = B (run / handle), C = C (jump), Enter = Start (skip),
  *       Q = L (change view: fixed / overhead / first person), W = R, PageUp/PageDown = previous/next room, H = toggle HD textures, F12 = screenshot.
+ *       Enter (Start) opens the item menu outside cutscenes. F1-F3 load save slot 1-3, Shift+F1-F3 save to it.
+ *   --stills <dir>   upscaled stills (default: assets_hd/stills beside --hd; English set in <dir>_en)
+ *   --load N         start from save slot N        --give 5,20   put items in the inventory (testing)
  */
 #include "game.h"
 #include "render.h"
@@ -49,6 +52,7 @@ static void run_input(Game *g, const char *spec) {
 /* the current message, centred near the bottom, text height 1/20 of the screen */
 static void draw_message(Renderer *rnd, Game *g, int w, int h) {
     static int key = -1, bw, bh;
+    if (g->ui.mode != UI_NONE) return;
     static const uint32_t GAME_OVER[] = {'G', 'A', 'M', 'E', ' ', 'O', 'V', 'E', 'R', 0};
     int id = g->gameover ? 9999 : g->msg_id;
     if (!g->gameover && !g->msg_shown) return;
@@ -98,8 +102,9 @@ static uint32_t read_pad(SDL_GameController *gc) {
 }
 
 int main(int argc, char **argv) {
-    const char *data = "extracted/fs", *hd = NULL, *shot = NULL, *input = NULL, *textf = NULL, *fontf = NULL;
-    int room = 1, hz = 20, w = 1280, h = 720, camera = -1, jp = 0;
+    const char *data = "extracted/fs", *hd = NULL, *shot = NULL, *input = NULL, *textf = NULL, *fontf = NULL, *stills = NULL;
+    const char *give = NULL, *event = NULL;
+    int room = 1, hz = 20, w = 1280, h = 720, camera = -1, jp = 0, load = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
         else if (!strcmp(argv[i], "--hd") && i + 1 < argc) hd = argv[++i];
@@ -112,6 +117,10 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--text") && i + 1 < argc) textf = argv[++i];
         else if (!strcmp(argv[i], "--font") && i + 1 < argc) fontf = argv[++i];
         else if (!strcmp(argv[i], "--jp")) jp = 1;
+        else if (!strcmp(argv[i], "--stills") && i + 1 < argc) stills = argv[++i];
+        else if (!strcmp(argv[i], "--load") && i + 1 < argc) load = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--give") && i + 1 < argc) give = argv[++i];
+        else if (!strcmp(argv[i], "--event") && i + 1 < argc) event = argv[++i];
     }
     if (hz < 1) hz = 20;
     int gles = getenv("HZ_GLES") != NULL;
@@ -160,18 +169,49 @@ int main(int argc, char **argv) {
     }
     if (!rnd || game_init(&g, data, textf)) { fprintf(stderr, "init failed (data: %s)\n", data); return 1; }
     g.hz = hz;
+    g.english = textf != NULL;
+    /* upscaled stills: --stills <dir>, else assets_hd/stills next to the --hd textures; English set in <dir>_en */
+    {
+        char base[1024] = "";
+        if (stills) snprintf(base, sizeof base, "%s", stills);
+        else if (hd) {
+            snprintf(base, sizeof base, "%s", hd);
+            size_t n = strlen(base);
+            while (n && (base[n - 1] == '/' || base[n - 1] == '\\')) base[--n] = 0;
+            char *sl = strrchr(base, '/'), *bs = strrchr(base, '\\');
+            if (bs > sl) sl = bs;
+            if (sl) snprintf(sl + 1, sizeof base - (size_t)(sl + 1 - base), "stills"); else snprintf(base, sizeof base, "stills");
+        }
+        if (base[0]) { snprintf(g.stills[1], sizeof g.stills[1], "%s", base); snprintf(g.stills[0], sizeof g.stills[0], "%s_en", base); }
+        log_msg("stills: %s", base[0] ? base : "(original pictures from the disc)");
+    }
+    {
+        char *pref = SDL_GetPrefPath("Pinchanted", "DoctorHauzer");
+        if (pref) { snprintf(g.save_dir, sizeof g.save_dir, "%s", pref); SDL_free(pref); }
+    }
+    if (give) for (const char *p = give; *p;) { int it = atoi(p); if (it > 0) game_add_item(&g, it); while (*p && *p != ',') p++; if (*p) p++; }
     if (!shot) audio_init(g.orgdata);
     render_set_human(rnd, &g.human);
     if (game_load_room(&g, room, rnd)) { fprintf(stderr, "cannot load room %d\n", room); return 1; }
+    if (load > 0 && game_load_save(&g, load - 1)) fprintf(stderr, "no save in slot %d\n", load);
 
     if (shot) {
+        if (event) {   /* testing: "PRE*n" ticks first, then fire the script event a,b,c */
+            int a = 0, b = 0, c = 0, pre = 0;
+            if (sscanf(event, "%d*%d,%d,%d,%d", &pre, &pre, &a, &b, &c) != 5) { pre = 0; sscanf(event, "%d,%d,%d", &a, &b, &c); }
+            for (int i = 0; i < pre; i++) game_tick(&g, 0);
+            script_event(&g.script, &g, a, b, c);
+        }
         if (input) run_input(&g, input);
         if (camera >= 0 && camera < g.room.ncams) g.camera = camera;
         CameraView cam;
         game_view(&g, 1.0f, &cam);
-        render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, &g.overlay_tris, w, h);
-        render_dim(rnd, game_fade_level(&g, 1.0f), w, h);
-        draw_message(rnd, &g, w, h);
+        if (!ui_covers_screen(&g)) {
+            render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, &g.overlay_tris, w, h);
+            render_dim(rnd, game_fade_level(&g, 1.0f), w, h);
+            draw_message(rnd, &g, w, h);
+        }
+        ui_draw(&g, rnd, w, h, 1.0f);
         int rc = render_screenshot(w, h, shot);
         log_msg("room %03d area %d: player at (%g, %g, %g) ry %g, camera %d (mode %d) -> %s", g.room_id, g.area,
                 g.player.pos[0], g.player.pos[1], g.player.pos[2], g.player.ry, g.camera, g.cam_mode, shot);
@@ -203,6 +243,10 @@ int main(int argc, char **argv) {
                     g.renderer = rnd;
                     render_set_room(rnd, &g.room); render_set_human(rnd, &g.human);
                     log_msg("textures: %s", use_hd ? "HD" : "original");
+                } else if (k >= SDLK_F1 && k <= SDLK_F3 && (e.key.keysym.mod & KMOD_SHIFT)) {
+                    game_save(&g, (int)(k - SDLK_F1));           /* Shift+F1..F3: quick save to slot 1..3 */
+                } else if (k >= SDLK_F1 && k <= SDLK_F3) {
+                    if (game_load_save(&g, (int)(k - SDLK_F1))) log_msg("slot %d is empty", (int)(k - SDLK_F1) + 1);
                 } else if (k == SDLK_F12) {
                     char name[64]; snprintf(name, sizeof name, "hauzer_%03d.png", shots++);
                     int dw, dh; SDL_GL_GetDrawableSize(win, &dw, &dh);
@@ -220,10 +264,14 @@ int main(int argc, char **argv) {
         int dw, dh;
         SDL_GL_GetDrawableSize(win, &dw, &dh);
         CameraView cam;
-        game_view(&g, (float)(acc / step), &cam);
-        render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, &g.overlay_tris, dw, dh);
-        render_dim(rnd, game_fade_level(&g, (float)(acc / step)), dw, dh);
-        draw_message(rnd, &g, dw, dh);
+        float alpha = (float)(acc / step);
+        game_view(&g, alpha, &cam);
+        if (!ui_covers_screen(&g)) {
+            render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, &g.overlay_tris, dw, dh);
+            render_dim(rnd, game_fade_level(&g, alpha), dw, dh);
+            draw_message(rnd, &g, dw, dh);
+        }
+        ui_draw(&g, rnd, dw, dh, alpha);
         SDL_GL_SwapWindow(win);
     }
     audio_shutdown();

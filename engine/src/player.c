@@ -179,6 +179,8 @@ static void state(Player *p, int s, int item) {
     }
 }
 
+int player_probe(Player *p) { return probe(p, PROBE); }
+
 int player_tick(Player *p, uint32_t pad) {
     p->nevents = 0;
     if (p->busy) {                       /* jump: 8 standing, 12 moving 28/tick, 4 landing */

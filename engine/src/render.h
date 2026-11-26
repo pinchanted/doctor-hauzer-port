@@ -22,3 +22,12 @@ int render_screenshot(int w, int h, const char *path);
 void render_dim(Renderer *r, float a, int sw, int sh);
 void render_overlay(Renderer *r, int key, const Image *img, int x, int y, int sw, int sh);
 extern float GAME_FOV_DEG;
+
+/* UI layer: keyed textures (stills, text labels) drawn in screen pixels; least recently used are evicted */
+int render_ui_has(Renderer *r, uint64_t key);
+void render_ui_put(Renderer *r, uint64_t key, const Image *img);
+int render_ui_size(Renderer *r, uint64_t key, int *w, int *h);
+void render_ui_draw(Renderer *r, uint64_t key, float x, float y, float w, float h, float alpha, int sw, int sh);
+void render_ui_rect(Renderer *r, float x, float y, float w, float h, float a, int sw, int sh);
+void render_clear(int sw, int sh);
+void render_model(Renderer *r, const TriList *t, const CameraView *cam, int x, int y, int w, int h, int sw, int sh);

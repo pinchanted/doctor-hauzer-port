@@ -31,3 +31,4 @@ void player_init(Player *p, Room *r, const float pos[3], float ry, int area);
 void player_free(Player *p);
 void player_rebuild_volumes(Player *p);
 int player_tick(Player *p, uint32_t pad);   /* returns number of events raised */
+int player_probe(Player *p);                /* trigger id 80 units ahead (examine / use item), 0 none */

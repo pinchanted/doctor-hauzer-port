@@ -124,42 +124,61 @@ int text_init(const char *font_path) {
     return 0;
 }
 
-int text_render_box(const uint32_t *cp, int px, Image *out) {
+static float line_width(const uint32_t *cp, int n, float scale) {
+    float w = 0;
+    for (int i = 0; i < n; i++) {
+        int adv, lsb;
+        stbtt_GetCodepointHMetrics(&g_font, (int)cp[i], &adv, &lsb);
+        w += adv * scale;
+        if (i + 1 < n) w += stbtt_GetCodepointKernAdvance(&g_font, (int)cp[i], (int)cp[i + 1]) * scale;
+    }
+    return w;
+}
+
+/* Lines split at '\n', each centred. Styles: TEXT_PANEL white on a translucent rounded panel,
+ * TEXT_SHADOW white with a shadow and no panel, TEXT_INK dark ink for the paper menus. */
+int text_render(const uint32_t *cp, int px, int style, Image *out) {
     memset(out, 0, sizeof *out);
     if (!g_font_ok || !cp) return -1;
     float scale = stbtt_ScaleForPixelHeight(&g_font, (float)px);
     int ascent, descent, gap;
     stbtt_GetFontVMetrics(&g_font, &ascent, &descent, &gap);
-    int base = (int)(ascent * scale);
-    float w = 0;
-    for (int i = 0; cp[i]; i++) {
-        int adv, lsb;
-        stbtt_GetCodepointHMetrics(&g_font, (int)cp[i], &adv, &lsb);
-        w += adv * scale;
-        if (cp[i + 1]) w += stbtt_GetCodepointKernAdvance(&g_font, (int)cp[i], (int)cp[i + 1]) * scale;
+    int base = (int)(ascent * scale), lh = (int)((ascent - descent + gap) * scale), th1 = (int)((ascent - descent) * scale);
+    int start[32], len[32], nl = 0;
+    float lw[32], w = 0;
+    for (int i = 0, st = 0;; i++) {
+        if (cp[i] == '\n' || cp[i] == 0) {
+            if (nl < 32) { start[nl] = st; len[nl] = i - st; lw[nl] = line_width(cp + st, i - st, scale); if (lw[nl] > w) w = lw[nl]; nl++; }
+            if (!cp[i]) break;
+            st = i + 1;
+        }
     }
-    int padx = px, pady = px / 2;
-    int tw = (int)ceilf(w), th = (int)((ascent - descent) * scale);
+    int padx = style == TEXT_PANEL ? px : px / 4 + 2, pady = style == TEXT_PANEL ? px / 2 : px / 8 + 2;
+    int tw = (int)ceilf(w), th = th1 + (nl - 1) * lh;
     out->w = tw + 2 * padx;
     out->h = th + 2 * pady;
     out->rgba = calloc((size_t)out->w * out->h, 4);
     uint8_t *alpha = calloc((size_t)out->w * out->h, 1);
-    float x = (float)padx;
-    for (int i = 0; cp[i]; i++) {
-        int adv, lsb, x0, y0, x1, y1;
-        stbtt_GetCodepointHMetrics(&g_font, (int)cp[i], &adv, &lsb);
-        stbtt_GetCodepointBitmapBoxSubpixel(&g_font, (int)cp[i], scale, scale, x - floorf(x), 0, &x0, &y0, &x1, &y1);
-        int gx = (int)floorf(x) + x0, gy = pady + base + y0, gw = x1 - x0, gh = y1 - y0;
-        if (gw > 0 && gh > 0 && gx >= 0 && gy >= 0 && gx + gw <= out->w && gy + gh <= out->h)
-            stbtt_MakeCodepointBitmapSubpixel(&g_font, alpha + (size_t)gy * out->w + gx, gw, gh, out->w, scale, scale,
-                                              x - floorf(x), 0, (int)cp[i]);
-        x += adv * scale;
-        if (cp[i + 1]) x += stbtt_GetCodepointKernAdvance(&g_font, (int)cp[i], (int)cp[i + 1]) * scale;
+    for (int l = 0; l < nl; l++) {
+        float x = padx + (w - lw[l]) / 2;
+        const uint32_t *c = cp + start[l];
+        int y = pady + l * lh;
+        for (int i = 0; i < len[l]; i++) {
+            int adv, lsb, x0, y0, x1, y1;
+            stbtt_GetCodepointHMetrics(&g_font, (int)c[i], &adv, &lsb);
+            stbtt_GetCodepointBitmapBoxSubpixel(&g_font, (int)c[i], scale, scale, x - floorf(x), 0, &x0, &y0, &x1, &y1);
+            int gx = (int)floorf(x) + x0, gy = y + base + y0, gw = x1 - x0, gh = y1 - y0;
+            if (gw > 0 && gh > 0 && gx >= 0 && gy >= 0 && gx + gw <= out->w && gy + gh <= out->h)
+                stbtt_MakeCodepointBitmapSubpixel(&g_font, alpha + (size_t)gy * out->w + gx, gw, gh, out->w, scale, scale,
+                                                  x - floorf(x), 0, (int)c[i]);
+            x += adv * scale;
+            if (i + 1 < len[l]) x += stbtt_GetCodepointKernAdvance(&g_font, (int)c[i], (int)c[i + 1]) * scale;
+        }
     }
     /* embolden a little (the default outline instance is light): blend each pixel toward the max of
      * its neighbourhood, radius ~px/30 */
     {
-        int r = px / 30 > 1 ? px / 30 : 1;
+        int r = px / (style == TEXT_INK ? 22 : 30) > 1 ? px / (style == TEXT_INK ? 22 : 30) : 1;
         uint8_t *src = malloc((size_t)out->w * out->h);
         memcpy(src, alpha, (size_t)out->w * out->h);
         for (int y = 0; y < out->h; y++)
@@ -171,32 +190,59 @@ int text_render_box(const uint32_t *cp, int px, Image *out) {
                         if (yy >= 0 && yy < out->h && x2 >= 0 && x2 < out->w && src[(size_t)yy * out->w + x2] > m) m = src[(size_t)yy * out->w + x2];
                     }
                 int a = src[(size_t)y * out->w + xx];
-                alpha[(size_t)y * out->w + xx] = (uint8_t)(a + (m - a) * 6 / 10);
+                alpha[(size_t)y * out->w + xx] = (uint8_t)(a + (m - a) * (style == TEXT_INK ? 8 : 6) / 10);
             }
         free(src);
     }
-    /* panel: translucent black with rounded corners; text with a soft offset shadow */
     int rad = pady, sh = px / 16 + 1;
     for (int y = 0; y < out->h; y++)
         for (int xx = 0; xx < out->w; xx++) {
-            float dx = 0, dy = 0;
-            if (xx < rad) dx = (float)(rad - xx); else if (xx >= out->w - rad) dx = (float)(xx - (out->w - rad - 1));
-            if (y < rad) dy = (float)(rad - y); else if (y >= out->h - rad) dy = (float)(y - (out->h - rad - 1));
-            float d = sqrtf(dx * dx + dy * dy);
-            float pa = d > rad ? 0.0f : d > rad - 1 ? (rad - d) : 1.0f;
-            float bg = 0.62f * pa;
             float t = alpha[(size_t)y * out->w + xx] / 255.0f;
+            uint8_t *o = out->rgba + 4 * ((size_t)y * out->w + xx);
+            if (style == TEXT_INK) {   /* dark sepia ink */
+                o[0] = 40; o[1] = 28; o[2] = 20; o[3] = (uint8_t)(t * 255);
+                continue;
+            }
+            float bg = 0;
+            if (style == TEXT_PANEL) {
+                float dx = 0, dy = 0;
+                if (xx < rad) dx = (float)(rad - xx); else if (xx >= out->w - rad) dx = (float)(xx - (out->w - rad - 1));
+                if (y < rad) dy = (float)(rad - y); else if (y >= out->h - rad) dy = (float)(y - (out->h - rad - 1));
+                float d = sqrtf(dx * dx + dy * dy);
+                float pa = d > rad ? 0.0f : d > rad - 1 ? (rad - d) : 1.0f;
+                bg = 0.62f * pa;
+            }
             float s = (y >= sh && xx >= sh) ? alpha[(size_t)(y - sh) * out->w + (xx - sh)] / 255.0f : 0.0f;
+            if (style == TEXT_SHADOW) s *= 0.85f;
             /* composite: panel, then shadow, then white text (straight alpha) */
             float a = bg, c = 0.0f;
             a = s + a * (1 - s);
             c = (c * bg * (1 - s)) / (a > 0 ? a : 1);
             float na = t + a * (1 - t);
             float nc = na > 0 ? (1.0f * t + c * a * (1 - t)) / na : 0;
-            uint8_t *o = out->rgba + 4 * ((size_t)y * out->w + xx);
             o[0] = o[1] = (uint8_t)(nc * 255); o[2] = (uint8_t)(nc * 250);
             o[3] = (uint8_t)(na * 255);
         }
     free(alpha);
     return 0;
+}
+
+int text_render_box(const uint32_t *cp, int px, Image *out) { return text_render(cp, px, TEXT_PANEL, out); }
+
+/* UTF-8 -> zero-terminated code points (cap entries) */
+int text_utf8(const char *s, uint32_t *out, int cap) {
+    const uint8_t *p = (const uint8_t *)s, *end = p + strlen(s);
+    int n = 0;
+    while (p < end && n < cap - 1) out[n++] = utf8_char(&p, end);
+    out[n] = 0;
+    return n;
+}
+
+/* Shift-JIS (zero-terminated) -> code points */
+int text_sjis(const char *s, uint32_t *out, int cap) {
+    const uint8_t *p = (const uint8_t *)s, *end = p + strlen(s);
+    int n = 0;
+    while (p < end && n < cap - 1) out[n++] = sjis_char(&p, end);
+    out[n] = 0;
+    return n;
 }

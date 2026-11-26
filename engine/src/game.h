@@ -6,6 +6,9 @@
 #include "room.h"
 #include "script.h"
 #include "text.h"
+#include "ui.h"
+
+#define GAME_SAVE_SLOTS 3
 
 /* actor handles (launchme's 56-byte actor table at 0x58aa0): 0 camera, 1 player body,
  * 3-49 poses, 50-59 close-up heads, 60 head, 61+ hands/panels/items, 100+ room objects */
@@ -53,6 +56,17 @@ typedef struct Game {
     int spawn_count;
     struct { int id; float pos[3]; } spawns[64];
     Renderer *renderer;
+    int script_id;
+    /* items: inventory slots (launchme 0x3e088, 40 ids, packed from slot 0) and the menu cursor (0x32064) */
+    int items[40], item_cursor;
+    int use_item;             /* chosen with "use" in the menu; applied on the next tick (0x55bc) */
+    Ui ui;
+    TriList ui_tris;
+    int english;              /* English text and item names */
+    char stills[2][1024];     /* upscaled stills: [0] English set, [1] original set (PNG, OrgData layout) */
+    char save_dir[1024];
+    int last_save_slot;
+    char image_names[32][32]; /* images/image.scp */
 } Game;
 
 int game_init(Game *g, const char *fs_dir, const char *text_override);
@@ -76,3 +90,14 @@ void game_camera_reset(Game *g);
 void game_message(Game *g, int id, int time, int reset);
 void game_fade(Game *g, int out, int vblanks);
 float game_fade_level(const Game *g, float alpha);
+
+/* inventory (0xe398 has, 0xe344 add, 0xe424 remove) */
+int game_has_item(const Game *g, int item);
+int game_add_item(Game *g, int item);
+void game_remove_item(Game *g, int item);
+const char *game_image_name(const Game *g, int n);    /* image.scp entry n (file name) */
+
+/* saves: <save_dir>/hauzer<N>.sav */
+int game_save(Game *g, int slot);
+int game_save_info(const Game *g, int slot, char *out, int cap);   /* 0 if the slot holds a save */
+int game_load_save(Game *g, int slot);

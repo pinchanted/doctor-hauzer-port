@@ -81,6 +81,17 @@ Verified against `launchme`: loader `0x148dc`, object builder `0x149dc`, collisi
 
 **Texture tables** for the player and item meshes live in `launchme`'s data (`0x322FC`–`0x32BFC` player, `0x32BFC`+ items): 16 `(type, value)` pairs per mesh. Type 1 = room texture bank (rooms convert their single-word tables to this), **2 = `HumanTex.bin`**, **3 = `ItemTex.bin`**, 4 = TBD, 0 = none. Mesh → table mapping from the loader at `0x3480` (`TABLE_FOR_MESH`).
 
+### Items, inventory and menus ✅
+- **Models:** `item/ItemPol.bin` holds 35 meshes; the loader at `0x32E4` puts mesh *k* (texture table `0x32BFC + 0x80·k`) in actor handle `220 + k`. **Item id = mesh index** (mesh 0 is a dummy; item 35, the pot, has no mesh).
+- **Item records** at `0x35C8C`, 56 bytes per id: handle (220 + id), idle spin x/y/z (added to the rotation every menu frame, 256 per turn), then the Shift-JIS name (40 bytes). Ids: 1–10 keys, 11–14 Hauzer's diary 1–4, 15–16 memos, 17–18 floor maps, 19 dictionary, 20 leather book, 21–35 objects (28 = the notebook, which saves).
+- **Examine pages:** `0x34894`, 32 bytes per id = up to 8 indices into the page table at `0x34100` (38-byte paths `isearch/seaNN.img`), −1 terminated.
+- **Inventory:** 40 ids at `0x3E088`, packed from slot 0; cursor at `0x32064`. `0xE398` has, `0xE344` add, `0xE424` remove (shifts down, cursor −1).
+- **Start menu (`0xF26C`):** background `window/cmd01.img`; the item turns in the spotlight at (0, −50, 400) in front of a camera at the origin. Left/Right change item, Up/Down pick 使う (use) / 調べる (examine), A confirms, B/C cancel. SE 3 open, 5 move, 4 cancel. Examine slides the model to x = 140 beside the page; on the page the d-pad and L/R change the spin speed (±0.25 per frame), B stops it, A turns the page. Examining the leather book (20) while `g105 = 0` offers the bronze key (5) afterwards. Empty inventory: 持ち物は何もない.
+- **Using an item (`0x55BC`):** item 28 opens the save notebook (`0xDCC8`). Otherwise the player state 13 probes 80 units ahead and fires `(trigger, 3, item)`, then the event `(item + 100, 0, 0)` fires; if no script handler ran, message 400 (ids < 11, "this key doesn't seem to work here") or 401 is shown for 16.
+- **Script commands:** `IF_ITEM item, L` (`0xE398`) · `ITEM_SLOT item` = remove the used item (`0xE424`) · `ITEM_SCREEN item, L` (`0xECD4`): "〜を見つけました / 取りますか？" with YES/NO; yes → SE 6, add the item, `g[100 + item] = 1` when `g105 = 0`, jump to L; no → SE 4, fall through. Scripts keep each item's state in `g[100 + item]` (0 not found, 1 held, 2 used).
+- **`PICTURE n`** (`0x6CE8` → `0x19B4`): line *n* (0-based) of `images/image.scp`, faded in over 10 frames, held until a button, faded out. Room 001 uses 6/7 (`r001L`/`r001R`).
+- `FC60` / `FC61` set a main-loop mode word (`0x35460 + 0x3C`); not needed by the port so far.
+
 ### Player animations ✅
 Defined in code, not in a file: `sub_03db4` builds 17 animation slots of 0x3C bytes at `0x3B960`. Pose handles are HumanPol mesh numbers (the loader puts mesh *k* in slot *k* of the handle array at `0x3C4A0`).
 
