@@ -26,7 +26,7 @@ float GAME_FOV_DEG = 50.1944f;
     X(PFNGLATTACHSHADERPROC, glAttachShader) X(PFNGLLINKPROGRAMPROC, glLinkProgram) \
     X(PFNGLBINDATTRIBLOCATIONPROC, glBindAttribLocation) X(PFNGLUSEPROGRAMPROC, glUseProgram) \
     X(PFNGLGETUNIFORMLOCATIONPROC, glGetUniformLocation) X(PFNGLUNIFORMMATRIX4FVPROC, glUniformMatrix4fv) \
-    X(PFNGLUNIFORM1IPROC, glUniform1i) X(PFNGLUNIFORM1FPROC, glUniform1f) X(PFNGLGENBUFFERSPROC, glGenBuffers) X(PFNGLBINDBUFFERPROC, glBindBuffer) \
+    X(PFNGLUNIFORM1IPROC, glUniform1i) X(PFNGLUNIFORM1FPROC, glUniform1f) X(PFNGLUNIFORM3FPROC, glUniform3f) X(PFNGLGENBUFFERSPROC, glGenBuffers) X(PFNGLBINDBUFFERPROC, glBindBuffer) \
     X(PFNGLBUFFERDATAPROC, glBufferData) X(PFNGLDELETEBUFFERSPROC, glDeleteBuffers) \
     X(PFNGLENABLEVERTEXATTRIBARRAYPROC, glEnableVertexAttribArray) \
     X(PFNGLVERTEXATTRIBPOINTERPROC, glVertexAttribPointer) X(PFNGLACTIVETEXTUREPROC, glActiveTexture)
@@ -49,7 +49,7 @@ typedef struct { GLuint vbo; int nb; Batch b[64]; } ObjGeo;
 struct Renderer {
     int gles;
     char hd_dir[1024];
-    GLuint prog; GLint u_mv, u_proj, u_bias, u_tex, u_mode, u_alpha;
+    GLuint prog; GLint u_mv, u_proj, u_bias, u_tex, u_mode, u_alpha, u_tint;
     GLuint ovl_tex; int ovl_key, ovl_w, ovl_h; GLuint ovl_vbo;
     GLuint white;
     GLuint *room_tex; int nroom_tex;
@@ -59,6 +59,8 @@ struct Renderer {
     float anisotropy;
     struct { uint64_t key; GLuint tex; int w, h; unsigned used; } ui[48];
     unsigned ui_clock;
+    GLuint movie_tex; int movie_w, movie_h; unsigned movie_serial; int movie_has;
+    float tint[3];             /* render_dim colour (black unless render_ui_fill sets it) */
 };
 
 /* u_bias pulls a vertex toward the camera in view space (world units): room objects such as doors
@@ -70,11 +72,11 @@ static const char *VS =
     "void main() { v_uv = a_uv; vec4 e = u_mv * vec4(a_pos, 1.0); e.z += u_bias; gl_Position = u_proj * e; }\n";
 /* u_mode 0: cut-out (3D textures, binary alpha); 1: blended overlay (text, UI) */
 static const char *FS =
-    "varying vec2 v_uv;\nuniform sampler2D u_tex;\nuniform float u_mode;\nuniform float u_alpha;\n"
+    "varying vec2 v_uv;\nuniform sampler2D u_tex;\nuniform float u_mode;\nuniform float u_alpha;\nuniform vec3 u_tint;\n"
     "void main() { vec4 c = texture2D(u_tex, v_uv);\n"
     "  if (u_mode < 0.5) { if (c.a < 0.5) discard; gl_FragColor = vec4(c.rgb / c.a, 1.0); }\n"
     "  else if (u_mode < 1.5) gl_FragColor = c * u_alpha;\n"
-    "  else gl_FragColor = vec4(0.0, 0.0, 0.0, u_alpha); }\n";
+    "  else gl_FragColor = vec4(u_tint, u_alpha); }\n";
 
 static GLuint compile(GLenum type, const char *src, int gles) {
     const char *pre = gles ? "#version 100\nprecision mediump float;\n" : "#version 120\n";
@@ -147,6 +149,7 @@ Renderer *render_create(int gles, const char *hd_dir) {
     r->u_bias = p_glGetUniformLocation(r->prog, "u_bias");
     r->u_mode = p_glGetUniformLocation(r->prog, "u_mode");
     r->u_alpha = p_glGetUniformLocation(r->prog, "u_alpha");
+    r->u_tint = p_glGetUniformLocation(r->prog, "u_tint");
     r->ovl_key = -1;
     r->u_tex = p_glGetUniformLocation(r->prog, "u_tex");
     uint8_t white[4] = {255, 0, 255, 255};
@@ -381,6 +384,7 @@ void render_dim(Renderer *r, float a, int sw, int sh) {
     p_glUseProgram(r->prog);
     p_glUniform1f(r->u_mode, 2.0f);
     p_glUniform1f(r->u_alpha, a > 1 ? 1 : a);
+    p_glUniform3f(r->u_tint, r->tint[0], r->tint[1], r->tint[2]);
     p_glUniform1f(r->u_bias, 0.0f);
     p_glUniformMatrix4fv(r->u_mv, 1, GL_FALSE, I);
     p_glUniformMatrix4fv(r->u_proj, 1, GL_FALSE, I);
@@ -509,4 +513,35 @@ void render_model(Renderer *r, const TriList *t, const CameraView *cam, int x, i
     draw_batches(r, r->player_vbo, t->b, t->nb, r->human_tex, r->nhuman_tex);
     glDisable(GL_SCISSOR_TEST);
     glViewport(0, 0, sw, sh);
+}
+
+/* a movie frame (RGB, w*h*3) in screen pixels; uploaded only when `serial` changes */
+void render_movie(Renderer *r, const uint8_t *rgb, int w, int h, unsigned serial, float x, float y, float dw, float dh,
+                  float alpha, int sw, int sh) {
+    if (!rgb || w <= 0 || h <= 0) return;
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    if (!r->movie_tex || w != r->movie_w || h != r->movie_h) {
+        if (r->movie_tex) glDeleteTextures(1, &r->movie_tex);
+        glGenTextures(1, &r->movie_tex);
+        glBindTexture(GL_TEXTURE_2D, r->movie_tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        r->movie_w = w; r->movie_h = h; r->movie_serial = serial;
+    } else if (serial != r->movie_serial) {
+        glBindTexture(GL_TEXTURE_2D, r->movie_tex);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+        r->movie_serial = serial;
+    }
+    draw_quad2d(r, r->movie_tex, x, y, dw, dh, alpha, 1, sw, sh);
+}
+
+/* a coloured rectangle (straight alpha) in screen pixels */
+void render_ui_fill(Renderer *r, float x, float y, float w, float h, float cr, float cg, float cb, float a, int sw, int sh) {
+    if (a <= 0 || w <= 0 || h <= 0) return;
+    r->tint[0] = cr; r->tint[1] = cg; r->tint[2] = cb;
+    render_ui_rect(r, x, y, w, h, a, sw, sh);
+    r->tint[0] = r->tint[1] = r->tint[2] = 0;
 }

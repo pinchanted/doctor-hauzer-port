@@ -21,6 +21,11 @@ static double g_music_pos, g_music_step;
 static int g_music_track = -1, g_music_on;
 static float g_vol_music = 0.8f, g_vol_fx = 1.0f;
 static char g_geffect[64][128];
+/* streamed PCM (movie soundtracks): a ring of stereo float frames at OUT_RATE */
+#define STREAM_CAP (OUT_RATE * 2)
+static float g_stream[STREAM_CAP][2];
+static int g_stream_r, g_stream_w, g_stream_on;
+static float g_vol_stream = 1.0f;
 static int g_ngeffect;
 
 static const char *SYSTEM_SE[8] = {"ASHI_YUKA1", "AKERU1.AIFF", "SIMERU1.AIFF", "KETTEI.AIFF", "CANCEL.AIFF",
@@ -113,6 +118,11 @@ static void mix(void *ud, Uint8 *stream, int len) {
             r += sample(&g_music, g_music_pos, 1) * g_vol_music;
             g_music_pos += g_music_step;
             if (g_music_pos >= g_music.frames) g_music_pos -= g_music.frames;   /* tracks loop */
+        }
+        if (g_stream_on && g_stream_r != g_stream_w) {
+            l += g_stream[g_stream_r][0] * 32767.0f * g_vol_stream;
+            r += g_stream[g_stream_r][1] * 32767.0f * g_vol_stream;
+            g_stream_r = (g_stream_r + 1) % STREAM_CAP;
         }
         for (int v = 0; v < MAX_VOICES; v++) {
             Voice *vo = &g_voices[v];
@@ -219,3 +229,43 @@ void audio_music(int track) {
 }
 
 void audio_set_volume(float music, float effects) { g_vol_music = music; g_vol_fx = effects; }
+
+/* ---------------------------------------------------------------- streamed PCM (movies) */
+void audio_stream_begin(void) {
+    if (!g_dev) return;
+    SDL_LockAudioDevice(g_dev);
+    g_stream_r = g_stream_w = 0; g_stream_on = 1;
+    SDL_UnlockAudioDevice(g_dev);
+}
+
+/* interleaved stereo floats (-1..1) at 44.1 kHz; drops what does not fit */
+void audio_stream_push(const float *lr, int frames) {
+    if (!g_dev || !g_stream_on) return;
+    SDL_LockAudioDevice(g_dev);
+    for (int i = 0; i < frames; i++) {
+        int nw = (g_stream_w + 1) % STREAM_CAP;
+        if (nw == g_stream_r) break;
+        g_stream[g_stream_w][0] = lr[2 * i]; g_stream[g_stream_w][1] = lr[2 * i + 1];
+        g_stream_w = nw;
+    }
+    SDL_UnlockAudioDevice(g_dev);
+}
+
+int audio_stream_queued(void) {
+    if (!g_dev) return 0;
+    SDL_LockAudioDevice(g_dev);
+    int n = (g_stream_w - g_stream_r + STREAM_CAP) % STREAM_CAP;
+    SDL_UnlockAudioDevice(g_dev);
+    return n;
+}
+
+void audio_stream_end(void) {
+    if (!g_dev) return;
+    SDL_LockAudioDevice(g_dev);
+    g_stream_on = 0; g_stream_r = g_stream_w = 0;
+    SDL_UnlockAudioDevice(g_dev);
+}
+
+int audio_available(void) { return g_dev != 0; }
+
+int audio_music_current(void) { return g_music_on ? g_music_track : 0; }

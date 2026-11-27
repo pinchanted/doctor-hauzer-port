@@ -1,0 +1,40 @@
+# English for the Japanese baked into the movies (the fan patch left the movies untouched).
+# The engine covers the Japanese and draws these lines at screen resolution.
+#   @ MOVIE w h                     the movie's picture size (coordinates below are in its pixels)
+#   style start end [x0 y0 x1 y1] | text      times in seconds; \n = new line
+# styles: sub (caption band), box (headline box), label (controls label), page (full-screen narration)
+
+@ OPDS 300 160
+box 13.0 16.5 82 120 213 150 | 1952
+box 20.0 23.6 13 121 285 150 | Dr. Hauzer, Genius of Archaeology
+box 24.5 28.1 42 120 251 150 | He Sweeps Every Academic Prize!
+box 29.2 33.2 52 121 242 150 | A Historic Text Discovered!
+box 38.1 42.1 97 120 201 150 | The Present Day
+box 45.5 47.8 72 123 216 150 | Dr. Hauzer
+box 48.3 50.5 73 123 217 150 | Missing!
+sub 53.2 57.6 50 121 250 148 | I first interviewed Dr. Hauzer\nten years ago...
+sub 58.8 63.3 30 121 270 149 | Ever since, I had followed his glory...\nI never imagined he would vanish.
+sub 64.8 69.4 24 131 290 148 | But at last, I've found where he is...
+sub 70.5 76.1 50 131 250 148 | An old mansion, far from town...
+
+@ STDS 292 212
+sub 5.0 7.3 56 170 236 193 | Oh? ...Whoa...
+sub 8.5 10.15 56 170 236 193 | This mansion seems to be
+sub 10.15 11.9 56 170 236 193 | in pretty bad shape...
+sub 14.2 16.3 56 170 236 193 | Huh!? It's opening...
+
+@ MESDS 292 212
+page 1.2 16.1 | Back when I was just starting out,\nmy very first assignment\nwas an interview with\nthe archaeologist Dr. Hauzer.\n\nAlready hailed as a genius of archaeology,\nhe had a genius's nervous temper,\nand the senior reporters at the paper\nall wanted nothing to do with him.
+page 16.1 30.3 | Handing that interview\nto a rookie like me\nmay well have been\ntheir idea of hazing.\n\nBut perhaps not knowing any better made me bold.\nI got through the interview, and was lucky enough\nto draw him out on research\nhe had never published.
+page 30.3 44.4 | After that success,\nevery story about him came to me,\nand for the years until he disappeared\nI kept on following him.\n\nWe never became friends.\n\nHis research made good copy,\nand that was all...
+page 44.4 56.7 | Even after he disappeared,\nI followed his trail,\nand at last I found where he was.\n\nTo meet him once more,\nI was on my way to his mansion...
+
+@ PADDS 320 240
+label 1.93 3.93 150 196 277 225 | Examine
+label 3.93 5.93 64 190 255 219 | Run
+label 5.93 7.93 148 182 275 213 | Jump
+label 7.93 9.93 26 190 151 221 | Move / Turn
+label 9.93 11.93 30 184 155 215 | Change View
+label 11.93 13.93 64 190 255 219 | Look Around
+label 13.93 15.93 76 188 203 217 | Controls Screen
+label 15.93 17.93 114 186 241 215 | Use Item

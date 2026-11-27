@@ -141,9 +141,16 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
   - **In the engine (`ui.c`):** Start opens the item menu; the item turns in the spotlight, rendered at full resolution with HD textures. Use runs the room's handlers or says the key doesn't work. Examine shows the 4× upscaled pages (English set when playing in English) with the model beside them; the diaries turn pages. Scripts' item pick-ups (Yes/No), `IF_ITEM`, used-up items and full-screen pictures all work. The notebook (item 28) saves to 3 slots; F1–F3 load and `--load N` starts from a save.
   - **English lettering:** the 4× upscaled English pages read cleanly, so re-lettering them is optional polish. One gap in the fan patch: the vase's page (`sea22`) is still in Japanese.
 
+- **2026-11-27** — **Title screen and movies.**
+  - **Boot and title, as the original:** the opening movie, then the title movie with OPENING / START / CONTINUE / OPERATION drawn at full resolution with each item's coloured glow. START plays the two intro movies and begins with the notebook; CONTINUE opens the notebook saves; OPERATION plays the controls movie; game over plays its movie and returns to the title. Rooms 304/305 play their tunnel movie from the script.
+  - **Movies in the engine:** the 3DO streams are rebuilt as MPEG-1 + MP2 and decoded with pl_mpeg (one portable path for PC, Android and Vita). `tools/movies_build.py` extracts the Cinepak frames (with the 3DO quirk bytes removed and EDDS's three frame sizes centred), upscales them 4x and encodes them. The frames are extracted on MELCHIOR and Lanczos previews are installed; `tools\movies_build.bat` runs the AI upscale.
+  - **English movies:** the fan patch never translated the movies (only padding bytes changed). The engine now covers the baked-in Japanese and draws English captions at screen resolution: the opening's headlines and narration, the door scene's lines, the four narration pages before the game, and the controls labels.
+
 ## Next steps
 
-1. Title screen with New game / Continue (loads the notebook saves), and FMV (opening, game over, ending).
-2. Re-letter the untranslated vase page (`sea22`); optional: re-letter all English pages at full resolution.
-3. Face animations in cutscenes (player slots 17+), room 211's cutscene camera.
-4. Calibrate the logic rate (the original has none) against gameplay footage, now that the PC build runs.
+1. AI-upscale the movie frames on MELCHIOR (`tools\movies_build.bat`), then encode the HD movies.
+2. The ending: `EDDS`, then `macroEnd` (credits played over room 4 scenes, which needs `LOAD_ROOM` to switch rooms mid-script) and `End.img`; the title's attract demos (`macroDemo1–3`).
+3. Re-letter the untranslated vase page (`sea22`); optional: re-letter all English pages at full resolution.
+4. Face animations in cutscenes (player slots 17+), room 211's cutscene camera.
+5. Optional: interpolate the 15 fps movies to 30/60 fps.
+6. Calibrate the logic rate (the original has none) against gameplay footage, now that the PC build runs.

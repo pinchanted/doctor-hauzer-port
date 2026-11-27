@@ -67,6 +67,8 @@ typedef struct Game {
     char save_dir[1024];
     int last_save_slot;
     char image_names[32][32]; /* images/image.scp */
+    char stream_names[32][16];/* stream/stream.scp: OPDS, OPDS, SLDS, MESDS, STDS, GODS, EDDS, TRDS */
+    char movies[2][1024];     /* rebuilt movies (.mpg): [0] English set, [1] original */
 } Game;
 
 int game_init(Game *g, const char *fs_dir, const char *text_override);
@@ -96,6 +98,8 @@ int game_has_item(const Game *g, int item);
 int game_add_item(Game *g, int item);
 void game_remove_item(Game *g, int item);
 const char *game_image_name(const Game *g, int n);    /* image.scp entry n (file name) */
+const char *game_stream_name(const Game *g, int n);   /* stream.scp entry n (OPDS, SLDS, ...) */
+void game_new(Game *g);                               /* fresh state, room 001 */
 
 /* saves: <save_dir>/hauzer<N>.sav */
 int game_save(Game *g, int slot);

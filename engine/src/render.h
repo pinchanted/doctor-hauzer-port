@@ -28,6 +28,9 @@ int render_ui_has(Renderer *r, uint64_t key);
 void render_ui_put(Renderer *r, uint64_t key, const Image *img);
 int render_ui_size(Renderer *r, uint64_t key, int *w, int *h);
 void render_ui_draw(Renderer *r, uint64_t key, float x, float y, float w, float h, float alpha, int sw, int sh);
+void render_ui_fill(Renderer *r, float x, float y, float w, float h, float cr, float cg, float cb, float a, int sw, int sh);
 void render_ui_rect(Renderer *r, float x, float y, float w, float h, float a, int sw, int sh);
 void render_clear(int sw, int sh);
+void render_movie(Renderer *r, const uint8_t *rgb, int w, int h, unsigned serial, float x, float y, float dw, float dh,
+                  float alpha, int sw, int sh);
 void render_model(Renderer *r, const TriList *t, const CameraView *cam, int x, int y, int w, int h, int sw, int sh);

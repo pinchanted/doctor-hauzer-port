@@ -23,6 +23,8 @@ Keys: arrows = d-pad · Z = A (examine) · X / Shift = B (run, push/pull) · C /
 Enter = Start (item menu; skips cutscenes) · **Q = L: change view (fixed cameras / overhead / first person)** · W = R · **PageUp / PageDown = previous / next room** · **H = HD / original
 textures** · F1–F3 = load save 1–3 (Shift+F1–F3 = save) · F12 = screenshot · Esc = quit. A game controller works too (A examine, X run, B jump).
 
+**Title:** without `--room` the game boots like the original: the opening movie (Start skips), then the title with OPENING / START / CONTINUE / OPERATION. Movies come from `assets_hd\movies` (built by `tools\movies_build.py`); English captions for their Japanese text come from `text\movies_en.txt`. `run_hauzer.bat --room 1` skips straight into a room.
+
 **Item menu (Start):** Left/Right choose an item, Up/Down choose Use / Examine, A confirms, X or B closes. On an examine page the d-pad spins the item, A turns the page. Use the **Notebook** to save (3 slots, stored in `%APPDATA%\Pinchanted\DoctorHauzer`). Stills come from `assets_hd\stills` (and `stills_en` in English) next to the `--hd` folder, or `--stills <dir>`; without them the original pictures are read from the disc.
 
 Options: `--text file.txt` (UTF-8, one message per line; default `text/mes_en.txt` beside the exe, made by `tools/make_text_en.py` from the English fan-translation disc), `--jp` (original Japanese text), `--room N`, `--hz N` (logic rate, default 20 - the original had no fixed rate),

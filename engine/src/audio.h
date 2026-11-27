@@ -12,5 +12,12 @@ void audio_slot_load(int slot, int effect);
 void audio_slot_play(int slot);
 void audio_slot_free(int slot);
 void audio_music(int track);
+int audio_music_current(void);              /* track playing, 0 none */
 void audio_set_volume(float music, float effects);
+/* movie soundtracks: stereo float frames at 44.1 kHz pushed as they are decoded */
+void audio_stream_begin(void);
+void audio_stream_push(const float *lr, int frames);
+int audio_stream_queued(void);
+void audio_stream_end(void);
+int audio_available(void);
 int audio_decode_file(const char *path, short **pcm, int *frames, int *channels, int *rate);   /* tests */

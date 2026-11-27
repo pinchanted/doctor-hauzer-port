@@ -46,10 +46,10 @@ int game_init(Game *g, const char *fs_dir, const char *text_override) {
     messages_load(&g->mes, mes, exe, text_override);
     /* the original counted message time in rendered frames; it drew rooms at roughly 10 fps */
     g->msg_scale_num = 1; g->msg_scale_den = 10;
-    /* images/image.scp: picture paths, one per line (PICTURE n, 0-based) */
-    {
+    /* images/image.scp and stream/stream.scp: file paths, one per line (PICTURE n / MOVIE n, 0-based) */
+    for (int list = 0; list < 2; list++) {
         char p[1200];
-        path_join(p, sizeof p, g->orgdata, "images/image.scp");
+        path_join(p, sizeof p, g->orgdata, list ? "stream/stream.scp" : "images/image.scp");
         Blob b = blob_load(p);
         int n = 0;
         for (size_t i = 0, st = 0; b.data && i <= b.size && n < 32; i++) {
@@ -58,8 +58,9 @@ int game_init(Game *g, const char *fs_dir, const char *text_override) {
                     size_t a = st;
                     for (size_t k = st; k < i; k++) if (b.data[k] == '/') a = k + 1;
                     size_t len = i - a < 31 ? i - a : 31;
-                    memcpy(g->image_names[n], b.data + a, len);
-                    g->image_names[n][len] = 0;
+                    char *dst = list ? g->stream_names[n] : g->image_names[n];
+                    memcpy(dst, b.data + a, len);
+                    dst[len] = 0;
                     n++;
                 }
                 st = i + 1;
@@ -67,8 +68,16 @@ int game_init(Game *g, const char *fs_dir, const char *text_override) {
         }
         blob_free(&b);
     }
+    if (!g->stream_names[0][0]) {   /* stream.scp missing from a partial copy: the list the disc ships */
+        static const char *DEF[8] = {"OPDS", "OPDS", "SLDS", "MESDS", "STDS", "GODS", "EDDS", "TRDS"};
+        for (int i = 0; i < 8; i++) snprintf(g->stream_names[i], sizeof g->stream_names[i], "%s", DEF[i]);
+    }
     g->last_save_slot = -1;
     return 0;
+}
+
+const char *game_stream_name(const Game *g, int n) {
+    return n >= 0 && n < 32 && g->stream_names[n][0] ? g->stream_names[n] : NULL;
 }
 
 const char *game_image_name(const Game *g, int n) {
@@ -215,11 +224,16 @@ float game_fade_level(const Game *g, float alpha) {
     return g->fade_from + (g->fade_to - g->fade_from) * t;
 }
 
-static void new_game(Game *g) {
+/* new game (0xab8 .. 0xb88): state cleared, the reporter starts with his notebook (item 28) */
+void game_new(Game *g) {
     memset(g_globals, 0, sizeof g_globals);
     memset(g_flags, 0, sizeof g_flags);
     memset(g->items, 0, sizeof g->items);
+    g->items[0] = 28;
     g->item_cursor = 0;
+    g->gameover = 0;
+    g->exit_requested = 0;
+    g->ui.mode = UI_NONE;
     g->view_mode = 0;
     g->fade_from = 1.0f; g->fade_to = 0.0f; g->fade_t = 0; g->fade_n = g->hz; g->fade_snap_back = 0;
     load_room_data(g, 1, 1, 0, g->renderer);
@@ -227,14 +241,12 @@ static void new_game(Game *g) {
 
 void game_tick(Game *g, uint32_t pad) {
     fade_tick(g);
-    if (g->gameover) {                               /* game over card, then a new game (original: GODS movie, title) */
-        if (--g->gameover == 0) new_game(g);
-        return;
-    }
-    if (g->exit_requested && !g->script.suspended) {
+    if (g->exit_requested && !g->script.suspended) {  /* game over (0xc90): the GODS movie, then the title */
         g->exit_requested = 0;
-        g->gameover = g->hz * 4;
+        audio_music(0);
         log_msg("GAME OVER");
+        ui_game_over(g);
+        g->prev_pad = pad;
         return;
     }
     memcpy(g->prev_pos, g->player.pos, sizeof g->prev_pos);

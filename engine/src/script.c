@@ -239,7 +239,12 @@ static void game_op(Script *s, Game *g, int opc) {
         if (ui_open_pickup(g, a0, l * 2)) { s->suspended = 1; s->wait = 1 << 30; }
         return;
     }
-    case 0xfcb0: s->pc = next; if (ui_open_picture(g, a0)) { s->suspended = 1; s->wait = 1 << 30; } return;   /* PICTURE */
+    case 0xfcb0: s->pc = next; if (ui_open_picture(g, a0, 10)) { s->suspended = 1; s->wait = 1 << 30; } return;   /* PICTURE */
+    case 0xfc6d: s->pc = next; if (ui_open_picture(g, a0, a1)) { s->suspended = 1; s->wait = 1 << 30; } return;  /* PICTURE n, fade */
+    case 0xfc79: case 0xfc6a:                                                          /* MOVIE n (stream.scp) */
+        s->pc = next;
+        if (ui_play_movie(g, a0)) { s->suspended = 1; s->wait = 1 << 30; }
+        return;
     default: break;                                                                    /* not modelled yet */
     }
     (void)a3;

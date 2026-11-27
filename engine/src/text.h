@@ -15,7 +15,8 @@ const uint32_t *messages_get(const Messages *m, int id);
 void messages_free(Messages *m);
 
 int text_init(const char *font_path);
-enum { TEXT_PANEL, TEXT_SHADOW, TEXT_INK };
+enum { TEXT_PANEL, TEXT_SHADOW, TEXT_INK, TEXT_GLOW };
+/* TEXT_GLOW takes its colour in the upper bits: TEXT_GLOW | 0xRRGGBB00 */
 /* lines split at '\n' and centred; straight-alpha RGBA */
 int text_render(const uint32_t *cp, int px, int style, Image *out);
 int text_utf8(const char *s, uint32_t *out, int cap);

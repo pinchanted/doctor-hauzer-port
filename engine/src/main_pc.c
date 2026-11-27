@@ -6,6 +6,8 @@
  *       Enter (Start) opens the item menu outside cutscenes. F1-F3 load save slot 1-3, Shift+F1-F3 save to it.
  *   --stills <dir>   upscaled stills (default: assets_hd/stills beside --hd; English set in <dir>_en)
  *   --load N         start from save slot N        --give 5,20   put items in the inventory (testing)
+ *   Without --room / --load the game boots like the original: opening movie, then the title menu.
+ *   Movies are read from assets_hd/movies (movies_en in English) beside the stills: tools/movies_build.py.
  */
 #include "game.h"
 #include "render.h"
@@ -44,7 +46,7 @@ static void run_input(Game *g, const char *spec) {
         char *star = strchr(item, '*');
         if (star) { *star = 0; n = atoi(star + 1); }
         uint32_t pad = parse_pad(item);
-        for (int i = 0; i < n; i++) game_tick(g, pad);
+        for (int i = 0; i < n; i++) { game_tick(g, pad); ui_update(g, 1.0 / g->hz); }
     }
     free(s);
 }
@@ -104,11 +106,11 @@ static uint32_t read_pad(SDL_GameController *gc) {
 int main(int argc, char **argv) {
     const char *data = "extracted/fs", *hd = NULL, *shot = NULL, *input = NULL, *textf = NULL, *fontf = NULL, *stills = NULL;
     const char *give = NULL, *event = NULL;
-    int room = 1, hz = 20, w = 1280, h = 720, camera = -1, jp = 0, load = 0;
+    int room = 1, hz = 20, w = 1280, h = 720, camera = -1, jp = 0, load = 0, direct = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
         else if (!strcmp(argv[i], "--hd") && i + 1 < argc) hd = argv[++i];
-        else if (!strcmp(argv[i], "--room") && i + 1 < argc) room = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--room") && i + 1 < argc) { room = atoi(argv[++i]); direct = 1; }
         else if (!strcmp(argv[i], "--hz") && i + 1 < argc) hz = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];
         else if (!strcmp(argv[i], "--input") && i + 1 < argc) input = argv[++i];
@@ -170,6 +172,13 @@ int main(int argc, char **argv) {
     if (!rnd || game_init(&g, data, textf)) { fprintf(stderr, "init failed (data: %s)\n", data); return 1; }
     g.hz = hz;
     g.english = textf != NULL;
+    if (textf) {   /* captions for the Japanese baked into the movies: movies_en.txt beside the text file */
+        char sp[1200]; snprintf(sp, sizeof sp, "%s", textf);
+        char *sl = strrchr(sp, '/'), *bs = strrchr(sp, '\\');
+        if (bs > sl) sl = bs;
+        if (sl) snprintf(sl + 1, sizeof sp - (size_t)(sl + 1 - sp), "movies_en.txt"); else snprintf(sp, sizeof sp, "movies_en.txt");
+        ui_load_movie_text(sp);
+    }
     /* upscaled stills: --stills <dir>, else assets_hd/stills next to the --hd textures; English set in <dir>_en */
     {
         char base[1024] = "";
@@ -182,8 +191,18 @@ int main(int argc, char **argv) {
             if (bs > sl) sl = bs;
             if (sl) snprintf(sl + 1, sizeof base - (size_t)(sl + 1 - base), "stills"); else snprintf(base, sizeof base, "stills");
         }
-        if (base[0]) { snprintf(g.stills[1], sizeof g.stills[1], "%s", base); snprintf(g.stills[0], sizeof g.stills[0], "%s_en", base); }
-        log_msg("stills: %s", base[0] ? base : "(original pictures from the disc)");
+        if (base[0]) {
+            snprintf(g.stills[1], sizeof g.stills[1], "%s", base); snprintf(g.stills[0], sizeof g.stills[0], "%s_en", base);
+            /* movies beside the stills: assets_hd/movies and movies_en */
+            snprintf(g.movies[1], sizeof g.movies[1], "%s", base);
+            size_t n = strlen(g.movies[1]);
+            if (n >= 6 && !strcmp(g.movies[1] + n - 6, "stills")) {
+                g.movies[1][n - 6] = 0;
+                strncat(g.movies[1], "movies", sizeof g.movies[1] - strlen(g.movies[1]) - 1);
+            } else snprintf(g.movies[1], sizeof g.movies[1], "movies");
+            snprintf(g.movies[0], sizeof g.movies[0], "%s_en", g.movies[1]);
+        }
+        log_msg("stills: %s, movies: %s", base[0] ? base : "(original pictures from the disc)", g.movies[1][0] ? g.movies[1] : "-");
     }
     {
         char *pref = SDL_GetPrefPath("Pinchanted", "DoctorHauzer");
@@ -193,6 +212,9 @@ int main(int argc, char **argv) {
     if (!shot) audio_init(g.orgdata);
     render_set_human(rnd, &g.human);
     if (game_load_room(&g, room, rnd)) { fprintf(stderr, "cannot load room %d\n", room); return 1; }
+    if (load > 0) direct = 1;
+    if (direct) g.ui.in_game = 1;
+    else ui_boot(&g);                                /* opening movie, then the title (--room N starts in a room) */
     if (load > 0 && game_load_save(&g, load - 1)) fprintf(stderr, "no save in slot %d\n", load);
 
     if (shot) {
@@ -224,7 +246,7 @@ int main(int argc, char **argv) {
     for (int i = 0; i < NROOMS; i++) if (ROOMS[i] == room) ri = i;
     int use_hd = hd != NULL, running = 1, shots = 0;
     double step = 1.0 / hz, acc = 0;
-    Uint64 last = SDL_GetPerformanceCounter();
+    Uint64 last = SDL_GetPerformanceCounter(), last_ui = last;
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -260,6 +282,8 @@ int main(int argc, char **argv) {
         last = now;
         if (acc > 0.25) acc = 0.25;
         uint32_t pad = read_pad(gc);
+        ui_update(&g, (double)(now - last_ui) / (double)SDL_GetPerformanceFrequency());
+        last_ui = now;
         while (acc >= step) { game_tick(&g, pad); acc -= step; }
         int dw, dh;
         SDL_GL_GetDrawableSize(win, &dw, &dh);

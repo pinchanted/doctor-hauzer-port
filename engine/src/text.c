@@ -153,7 +153,8 @@ int text_render(const uint32_t *cp, int px, int style, Image *out) {
             st = i + 1;
         }
     }
-    int padx = style == TEXT_PANEL ? px : px / 4 + 2, pady = style == TEXT_PANEL ? px / 2 : px / 8 + 2;
+    int padx = style == TEXT_PANEL ? px : (style & 255) == TEXT_GLOW ? px / 2 : px / 4 + 2;
+    int pady = style == TEXT_PANEL ? px / 2 : (style & 255) == TEXT_GLOW ? px / 3 : px / 8 + 2;
     int tw = (int)ceilf(w), th = th1 + (nl - 1) * lh;
     out->w = tw + 2 * padx;
     out->h = th + 2 * pady;
@@ -195,10 +196,44 @@ int text_render(const uint32_t *cp, int px, int style, Image *out) {
         free(src);
     }
     int rad = pady, sh = px / 16 + 1;
+    float *glow = NULL;
+    float gc[3] = {((style >> 24) & 255) / 255.0f, ((style >> 16) & 255) / 255.0f, ((style >> 8) & 255) / 255.0f};
+    if ((style & 255) == TEXT_GLOW) {   /* soft halo in the given colour: two box blurs of the glyph coverage */
+        int W = out->w, H = out->h, R = px / 6 > 1 ? px / 6 : 1;
+        glow = malloc(sizeof(float) * (size_t)W * H);
+        float *tmp = malloc(sizeof(float) * (size_t)W * H);
+        for (int i = 0; i < W * H; i++) glow[i] = alpha[i] / 255.0f;
+        for (int pass = 0; pass < 2; pass++) {
+            for (int y = 0; y < H; y++)
+                for (int xx = 0; xx < W; xx++) {
+                    float a = 0; int n = 0;
+                    for (int d = -R; d <= R; d++) { int x2 = xx + d; if (x2 >= 0 && x2 < W) { a += glow[y * W + x2]; n++; } }
+                    tmp[y * W + xx] = a / n;
+                }
+            for (int y = 0; y < H; y++)
+                for (int xx = 0; xx < W; xx++) {
+                    float a = 0; int n = 0;
+                    for (int d = -R; d <= R; d++) { int y2 = y + d; if (y2 >= 0 && y2 < H) { a += tmp[y2 * W + xx]; n++; } }
+                    glow[y * W + xx] = a / n;
+                }
+        }
+        free(tmp);
+    }
     for (int y = 0; y < out->h; y++)
         for (int xx = 0; xx < out->w; xx++) {
             float t = alpha[(size_t)y * out->w + xx] / 255.0f;
             uint8_t *o = out->rgba + 4 * ((size_t)y * out->w + xx);
+            if (glow) {
+                float ga = glow[(size_t)y * out->w + xx] * 2.2f; if (ga > 1) ga = 1;
+                float na = t + ga * (1 - t);
+                for (int k = 0; k < 3; k++) {
+                    float fill = 1.0f * 0.55f + gc[k] * 0.45f;   /* bright core tinted by the colour */
+                    float cval = na > 0 ? (fill * t + gc[k] * ga * (1 - t)) / na : 0;
+                    o[k] = (uint8_t)(cval * 255);
+                }
+                o[3] = (uint8_t)(na * 255);
+                continue;
+            }
             if (style == TEXT_INK) {   /* dark sepia ink */
                 o[0] = 40; o[1] = 28; o[2] = 20; o[3] = (uint8_t)(t * 255);
                 continue;
@@ -224,6 +259,7 @@ int text_render(const uint32_t *cp, int px, int style, Image *out) {
             o[3] = (uint8_t)(na * 255);
         }
     free(alpha);
+    free(glow);
     return 0;
 }
 
