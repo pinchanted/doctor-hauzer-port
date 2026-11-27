@@ -225,6 +225,8 @@ Overlap: centre distance is less than the sum of half sizes, on every axis.
   | +0x28 | draw routine (0 → `0x13C50`, else `0x14118`) |
   | +0x2C | skip the distance/visibility cull |
 
+- **Handedness:** screen x runs opposite to a right-handed GL view (`x_screen = −v.x · 256 / (z + 64)`). This was confirmed against original screenshots (the intro close-up's lighting) and the controls (Right lowers the angle by 8 yet turns the player to his right). The port negates the projection's x and culls `GL_FRONT`.
+- **Draw order:** actors are drawn in table order without a z-buffer, so where two share a plane the later one shows. Door scenes rely on this: room 001's corridor box (108) has its end wall on the same plane as the door leaves (109/110) and the dark doorway planes (111/112). The port gives each object a view-space bias of `2 + 0.1·index` units.
 - **Camera:** the camera is an actor (handle at `0x36698+0x2E8`). `CAMERA n` copies a room camera's eye and target into it and aims it (`0x12C2C` → `0x11B34`).
 
 ## Text — `mes/mes.scp` ✅

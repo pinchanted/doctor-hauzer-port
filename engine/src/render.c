@@ -238,7 +238,11 @@ static void view_proj(const CameraView *cam, int w, int h, float V_out[16], floa
     V[13] = -(u[0] * eye[0] + u[1] * eye[1] + u[2] * eye[2]);
     V[14] = (f[0] * eye[0] + f[1] * eye[1] + f[2] * eye[2]);
     float n = 16.0f, fa = 12000.0f, t = 1.0f / tanf(GAME_FOV_DEG * 3.14159265f / 360.0f), a = (float)w / (float)h;
-    float P[16] = {t / a, 0, 0, 0, 0, t, 0, 0, 0, 0, (fa + n) / (n - fa), -1, 0, 0, 2 * fa * n / (n - fa), 0};
+    /* The 3DO's screen x runs the other way to this right-handed view (x = -v.x*256/(z+64)): checked
+     * against original screenshots (the intro close-up's nose shadow, the pit room's door) and the
+     * controls (Right lowers the angle yet turns the player to his right). Mirroring flips the triangle
+     * winding, so one-sided geometry culls GL_FRONT below. */
+    float P[16] = {-t / a, 0, 0, 0, 0, t, 0, 0, 0, 0, (fa + n) / (n - fa), -1, 0, 0, 2 * fa * n / (n - fa), 0};
     memcpy(V_out, V, sizeof V);
     memcpy(P_out, P, sizeof P);
 }
@@ -296,9 +300,12 @@ void render_frame(Renderer *r, const Room *room, int area, const CameraView *cam
             float fl = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
             if (fl > 1e-3f && (d[0] * f[0] + d[1] * f[1] + d[2] * f[2]) / fl < -364.0f) continue;
         }
-        p_glUniform1f(r->u_bias, i > 0 ? 2.0f : 0.0f);
+        /* The 3DO draws the actors in table order, so where two objects share a plane (a door leaf in a
+         * door-scene wall, a door on the shell) the later one shows. Each object is pulled towards the
+         * camera a little more than the one before it. */
+        p_glUniform1f(r->u_bias, i > 0 ? 2.0f + 0.1f * (float)i : 0.0f);
         /* room geometry is one-sided: fixed cameras sit on or behind walls, whose backs the 3DO never drew */
-        if (i == 0 || !getenv("HZ_CULL_SHELL_ONLY")) { glEnable(GL_CULL_FACE); glCullFace(GL_BACK); }
+        if (i == 0 || !getenv("HZ_CULL_SHELL_ONLY")) { glEnable(GL_CULL_FACE); glCullFace(GL_FRONT); }
         else glDisable(GL_CULL_FACE);
         model_matrix(o->pos, o->rot, M);
         mat_mul(MV, V, M);

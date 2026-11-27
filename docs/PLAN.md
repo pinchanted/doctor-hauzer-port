@@ -151,6 +151,9 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
   - **Ending:** room 313's `ENDING` command now plays `EDDS`, then the closing text pages (the fan patch's English) and the fly-through of eight rooms (rooms switch under the running script, as on the 3DO), then `End.img` and back to the title. Start skips the fly-through.
   - **Attract demos:** when the title movie runs out, the three demo scripts play (any button stops them), then the opening, then the title.
   - **`PICTURE` corrected:** it never waited for a button; the picture stays on screen while the script's own `WAIT_BUTTON` (decoded, previously ignored) waits, which removes a double button press at the room 001 windows.
+- **2026-11-27** — **Mirror and door fixes** (from play-testing).
+  - The whole view was mirrored left to right relative to the 3DO, which also made Left and Right turn the wrong way on screen. The projection is now flipped to match.
+  - The door scenes showed the wall through opening doors because coplanar objects drew in the wrong order. Later objects now win, as on the 3DO.
 
 ## Next steps
 
