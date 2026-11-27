@@ -69,6 +69,13 @@ typedef struct Game {
     char image_names[32][32]; /* images/image.scp */
     char stream_names[32][16];/* stream/stream.scp: OPDS, OPDS, SLDS, MESDS, STDS, GODS, EDDS, TRDS */
     char movies[2][1024];     /* rebuilt movies (.mpg): [0] English set, [1] original */
+    /* PICTURE (0x19b4): fade the screen out, then the picture in; it stays on screen until the script
+     * draws a frame, a FADE_OUT clears the screen, or the script run ends */
+    int pic_shown, pic_next, pic_phase, pic_fade_in;
+    int wait_button;          /* WAIT_BUTTON (0xc470): 1 = waiting for release, 2 = for a press */
+    int ending_requested;     /* ENDING (0xfc6b, room 313) */
+    int cinematic;            /* the credits or an attract demo: LOAD_ROOM switches at once, no room events */
+    int cinematic_kind;       /* 1 credits, 2..4 demo 1..3 */
 } Game;
 
 int game_init(Game *g, const char *fs_dir, const char *text_override);
@@ -100,6 +107,10 @@ void game_remove_item(Game *g, int item);
 const char *game_image_name(const Game *g, int n);    /* image.scp entry n (file name) */
 const char *game_stream_name(const Game *g, int n);   /* stream.scp entry n (OPDS, SLDS, ...) */
 void game_new(Game *g);                               /* fresh state, room 001 */
+int game_start_cinematic(Game *g, const char *macro, int kind);   /* macroEnd / macroDemoN (0xf70, 0xdf8) */
+void game_show_picture(Game *g, int n, int fade_out, int fade_in);
+void game_load_room_now(Game *g, int room_id);
+void game_clear_picture(Game *g);
 
 /* saves: <save_dir>/hauzer<N>.sav */
 int game_save(Game *g, int slot);

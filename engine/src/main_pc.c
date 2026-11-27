@@ -106,6 +106,7 @@ static uint32_t read_pad(SDL_GameController *gc) {
 int main(int argc, char **argv) {
     const char *data = "extracted/fs", *hd = NULL, *shot = NULL, *input = NULL, *textf = NULL, *fontf = NULL, *stills = NULL;
     const char *give = NULL, *event = NULL;
+    int flow = 0;
     int room = 1, hz = 20, w = 1280, h = 720, camera = -1, jp = 0, load = 0, direct = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
@@ -123,6 +124,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--load") && i + 1 < argc) load = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--give") && i + 1 < argc) give = argv[++i];
         else if (!strcmp(argv[i], "--event") && i + 1 < argc) event = argv[++i];
+        else if (!strcmp(argv[i], "--ending")) flow = 1;     /* testing: jump to the ending */
+        else if (!strcmp(argv[i], "--demo")) flow = 2;       /* testing: the attract demos */
     }
     if (hz < 1) hz = 20;
     int gles = getenv("HZ_GLES") != NULL;
@@ -214,7 +217,10 @@ int main(int argc, char **argv) {
     if (game_load_room(&g, room, rnd)) { fprintf(stderr, "cannot load room %d\n", room); return 1; }
     if (load > 0) direct = 1;
     if (direct) g.ui.in_game = 1;
-    else ui_boot(&g);                                /* opening movie, then the title (--room N starts in a room) */
+    else ui_boot(&g);
+    if (flow == 1) ui_ending(&g);
+    if (flow == 2) { static const int st[] = {STEP_DEMO, STEP_TITLE}; (void)st; g.ui.nq = 0; g.ui.queue[g.ui.nq++] = STEP_TITLE;
+                     g.ui.in_game = 1; g.ui.mode = UI_NONE; game_start_cinematic(&g, "macro/macroDemo1", 2); }                                /* opening movie, then the title (--room N starts in a room) */
     if (load > 0 && game_load_save(&g, load - 1)) fprintf(stderr, "no save in slot %d\n", load);
 
     if (shot) {
@@ -229,7 +235,8 @@ int main(int argc, char **argv) {
         CameraView cam;
         game_view(&g, 1.0f, &cam);
         if (!ui_covers_screen(&g)) {
-            render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, &g.overlay_tris, w, h);
+            if (g.pic_shown >= 0) ui_draw_picture(&g, rnd, w, h);
+            else render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, &g.overlay_tris, w, h);
             render_dim(rnd, game_fade_level(&g, 1.0f), w, h);
             draw_message(rnd, &g, w, h);
         }
@@ -291,7 +298,8 @@ int main(int argc, char **argv) {
         float alpha = (float)(acc / step);
         game_view(&g, alpha, &cam);
         if (!ui_covers_screen(&g)) {
-            render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, &g.overlay_tris, dw, dh);
+            if (g.pic_shown >= 0) ui_draw_picture(&g, rnd, dw, dh);
+            else render_frame(rnd, &g.room, g.area, &cam, &g.player_tris, &g.overlay_tris, dw, dh);
             render_dim(rnd, game_fade_level(&g, alpha), dw, dh);
             draw_message(rnd, &g, dw, dh);
         }

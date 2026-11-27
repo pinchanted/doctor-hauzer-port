@@ -216,7 +216,9 @@ static void game_op(Script *s, Game *g, int opc) {
     case 0xfc86: g->player_hidden = 1; break;                                          /* HIDE_PLAYER */
     case 0xfc78: game_camera_fixed(g, a0); break;                                      /* CAMERA */
     case 0xfcab: game_camera_reset(g); break;                                          /* CAMERA_RESET */
-    case 0xfca7: case 0xfca8: case 0xfc9e: s->pc = next; suspend(s, 1); return;       /* DRAW */
+    case 0xfca7: case 0xfca8: case 0xfc9e: s->pc = next; game_clear_picture(g); suspend(s, 1); return;   /* DRAW */
+    case 0xfc88: s->pc = next; g->wait_button = 1; suspend(s, 1 << 30); return;       /* WAIT_BUTTON (0xc470) */
+    case 0xfc6b: g->ending_requested = 1; break;                                       /* ENDING (0x1b08) */
     case 0xfcc8: s->pc = next; suspend(s, (a0 * g->hz + 59) / 60); return;             /* SLEEP vblanks */
     case 0xfcb4: case 0xfcb3: game_fade(g, opc == 0xfcb4, a0); s->pc = next; suspend(s, (a0 * g->hz + 59) / 60); return;   /* FADE_OUT / FADE_IN */
     case 0xfcaa: game_message(g, a0, a1, a2); break;                                   /* MESSAGE */
@@ -228,7 +230,9 @@ static void game_op(Script *s, Game *g, int opc) {
     case 0xfc76: break;                                                            /* SE_WAIT slot (0xb2a0) */
     case 0xfc7f: g->footstep_slot = a0; break;                                     /* FOOTSTEP slot (0x63f8) */
     case 0xfc7d: { int l = raw_at(s, 0); s->pc = next; if (g->skip_pressed) s->pc = l * 2; return; }  /* IF_SKIP */
-    case 0xfca9: g->pending_room = a0; break;                                          /* LOAD_ROOM */
+    case 0xfca9:                                                                       /* LOAD_ROOM */
+        if (g->cinematic) { s->pc = next; game_load_room_now(g, a0); return; }
+        g->pending_room = a0; break;
     case 0xfcc6: g->pending_script = a0; break;                                        /* LOAD_SCRIPT */
     case 0xfcc5: g->exit_requested = 1; break;                                         /* EXIT */
     case 0xfcc0: { int l = raw_at(s, 1); s->pc = next; if (game_has_item(g, a0)) s->pc = l * 2; return; }   /* IF_ITEM */
@@ -239,8 +243,8 @@ static void game_op(Script *s, Game *g, int opc) {
         if (ui_open_pickup(g, a0, l * 2)) { s->suspended = 1; s->wait = 1 << 30; }
         return;
     }
-    case 0xfcb0: s->pc = next; if (ui_open_picture(g, a0, 10)) { s->suspended = 1; s->wait = 1 << 30; } return;   /* PICTURE */
-    case 0xfc6d: s->pc = next; if (ui_open_picture(g, a0, a1)) { s->suspended = 1; s->wait = 1 << 30; } return;  /* PICTURE n, fade */
+    case 0xfcb0: s->pc = next; game_show_picture(g, a0, 10, 10); suspend(s, 1 << 30); return;   /* PICTURE (0x6ce8) */
+    case 0xfc6d: s->pc = next; game_show_picture(g, a0, a1, a1); suspend(s, 1 << 30); return;   /* PICTURE n, fade */
     case 0xfc79: case 0xfc6a:                                                          /* MOVIE n (stream.scp) */
         s->pc = next;
         if (ui_play_movie(g, a0)) { s->suspended = 1; s->wait = 1 << 30; }

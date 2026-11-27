@@ -10,10 +10,10 @@
 
 struct Game;
 
-enum { UI_NONE, UI_MENU, UI_PICKUP, UI_PICTURE, UI_PAGES, UI_SAVE, UI_MOVIE, UI_TITLE, UI_LOAD };
+enum { UI_NONE, UI_MENU, UI_PICKUP, UI_PICTURE, UI_PAGES, UI_SAVE, UI_MOVIE, UI_TITLE, UI_LOAD, UI_END };
 
 /* front-end flow steps (launchme 0x680): movies by stream.scp index, the title, a new game, back to the game */
-enum { STEP_TITLE = 1, STEP_NEWGAME, STEP_RESUME, STEP_GAMEOVER_CARD, STEP_MOVIE = 100 };
+enum { STEP_TITLE = 1, STEP_NEWGAME, STEP_RESUME, STEP_CREDITS, STEP_DEMO, STEP_END_SCREEN, STEP_MOVIE = 100 };
 struct Movie;
 
 typedef struct {
@@ -46,6 +46,9 @@ int ui_open_picture(struct Game *g, int n, int fade);
 int ui_play_movie(struct Game *g, int stream_index);                /* MOVIE n from a script */
 void ui_boot(struct Game *g);                                        /* opening movie, then the title */
 void ui_game_over(struct Game *g);
+void ui_ending(struct Game *g);                                      /* EDDS, credits, End.img, title */
+void ui_cinematic_done(struct Game *g, int aborted);                 /* credits / a demo finished */
+void ui_draw_picture(struct Game *g, Renderer *r, int w, int h);     /* the PICTURE layer */
 void ui_update(struct Game *g, double seconds);                      /* real time: movie decoding */
 int ui_open_save(struct Game *g);
 void ui_tick(struct Game *g, uint32_t pad);

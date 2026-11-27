@@ -73,6 +73,7 @@ int game_init(Game *g, const char *fs_dir, const char *text_override) {
         for (int i = 0; i < 8; i++) snprintf(g->stream_names[i], sizeof g->stream_names[i], "%s", DEF[i]);
     }
     g->last_save_slot = -1;
+    g->pic_shown = -1;
     return 0;
 }
 
@@ -156,14 +157,16 @@ static int load_room_data(Game *g, int room_id, int script_id, int keep_player, 
     else for (int i = 0; i < g->spawn_count; i++) if (g->spawns[i].id == room_id) memcpy(pos, g->spawns[i].pos, sizeof pos);
     player_free(&g->player);
     room_free(&g->room);
-    script_free(&g->script);
+    if (script_id >= 0) script_free(&g->script);
     g->room = nr;
     g->room_id = room_id;
-    g->script_id = script_id;
     g->area = 0;
-    snprintf(name, sizeof name, "macro/macro%03d", script_id);
-    path_join(path, sizeof path, g->orgdata, name);
-    script_load(&g->script, path);
+    if (script_id >= 0) {
+        g->script_id = script_id;
+        snprintf(name, sizeof name, "macro/macro%03d", script_id);
+        path_join(path, sizeof path, g->orgdata, name);
+        script_load(&g->script, path);
+    }
     player_init(&g->player, &g->room, pos, ry, 0);
     memcpy(g->prev_pos, pos, sizeof pos);
     g->prev_ry = ry;
@@ -174,14 +177,54 @@ static int load_room_data(Game *g, int room_id, int script_id, int keep_player, 
     g->cam_reset_pending = 0;
     g->footstep_slot = 0;
     memset(g->actor, 0, sizeof g->actor);
-    memset(g->mq, 0, sizeof g->mq); g->msg_frames = 0; g->msg_shown = 0;
+    if (script_id >= 0) { memset(g->mq, 0, sizeof g->mq); g->msg_frames = 0; g->msg_shown = 0; }
     pick_camera(g);
     if (r) render_set_room(r, &g->room);
     log_msg("room %03d (script %03d): %d objects, %d cameras, player (%g, %g, %g), camera %d", room_id, script_id,
             g->room.nobjects, g->room.ncams, pos[0], pos[1], pos[2], g->camera);
-    script_event(&g->script, g, 1, 0, 0);            /* room entered */
+    if (script_id >= 0) script_event(&g->script, g, 1, 0, 0);   /* room entered */
     return 0;
 }
+
+/* LOAD_ROOM during the credits / demos: the room changes under the running script (0xfca9 loads at once) */
+void game_load_room_now(Game *g, int room_id) {
+    if (load_room_data(g, room_id, -1, 1, g->renderer) == 0) g->cam_mode = CAM_FIXED;
+}
+
+int game_start_cinematic(Game *g, const char *macro, int kind) {
+    char path[1200];
+    path_join(path, sizeof path, g->orgdata, macro);
+    memset(g_globals, 0, sizeof g_globals);
+    memset(g_flags, 0, sizeof g_flags);
+    memset(g->items, 0, sizeof g->items);
+    g->exit_requested = g->ending_requested = 0;
+    g->view_mode = 0;
+    g->pending_room = g->pending_script = -1;
+    script_free(&g->script);
+    if (script_load(&g->script, path)) { log_msg("cannot load %s", path); return -1; }
+    float pos[3] = {0, 200, 0};                      /* 0xfe8: the player actor at (0, 200, 0), facing 0 */
+    memcpy(g->player.pos, pos, sizeof pos);
+    g->player.ry = 0;
+    g->cinematic = 1;
+    g->cinematic_kind = kind;
+    g->pic_shown = -1;
+    log_msg("cinematic %s", macro);
+    script_event(&g->script, g, 1, 0, 0);
+    return 0;
+}
+
+void game_show_picture(Game *g, int n, int fade_out, int fade_in) {
+    g->pic_next = n;
+    g->pic_fade_in = fade_in;
+    g->pic_phase = 1;
+    g->fade_from = game_fade_level(g, 1.0f);
+    g->fade_to = 1.0f;
+    g->fade_t = 0;
+    g->fade_n = fade_out * g->hz / 60 + 1;
+    g->fade_snap_back = 0;
+}
+
+void game_clear_picture(Game *g) { g->pic_shown = -1; }
 
 int game_load_room(Game *g, int room_id, Renderer *r) {
     if (r) g->renderer = r;
@@ -201,7 +244,7 @@ static void fade_tick(Game *g) {
     if (g->fade_n <= 0) return;
     if (++g->fade_t >= g->fade_n) {
         g->fade_n = 0;
-        if (g->fade_snap_back) { g->fade_from = g->fade_to = 0; g->fade_snap_back = 0; }
+        if (g->fade_snap_back) { g->fade_from = g->fade_to = 0; g->fade_snap_back = 0; g->pic_shown = -1; }
         else g->fade_from = g->fade_to;
     }
 }
@@ -241,6 +284,23 @@ void game_new(Game *g) {
 
 void game_tick(Game *g, uint32_t pad) {
     fade_tick(g);
+    if (g->pic_phase == 1 && g->fade_n == 0) {       /* picture: faded out, now in */
+        g->pic_shown = g->pic_next;
+        g->fade_from = 1.0f; g->fade_to = 0.0f; g->fade_t = 0; g->fade_n = g->pic_fade_in * g->hz / 60 + 1;
+        g->fade_snap_back = 0;
+        g->pic_phase = 2;
+    } else if (g->pic_phase == 2 && g->fade_n == 0) {
+        g->pic_phase = 0;
+        g->script.wait = 1;
+    }
+    if (g->ending_requested && !g->script.suspended) {   /* ending (0xc90): EDDS, then the credits (0xf70) */
+        g->ending_requested = 0;
+        audio_music(0);
+        log_msg("ENDING");
+        ui_ending(g);
+        g->prev_pad = pad;
+        return;
+    }
     if (g->exit_requested && !g->script.suspended) {  /* game over (0xc90): the GODS movie, then the title */
         g->exit_requested = 0;
         audio_music(0);
@@ -260,14 +320,26 @@ void game_tick(Game *g, uint32_t pad) {
     }
     g->skip_pressed = (pad & (PAD_START | PAD_X)) != 0;
     message_tick(g);
+    uint32_t skip = g->cinematic_kind >= 2 ? (PAD_START | PAD_A | PAD_C) : PAD_START;
+    if (g->cinematic && (pad & skip) && !(g->prev_pad & skip)) {
+        g->prev_pad = pad;                           /* a button ends an attract demo (0xea4); Start skips the credits */
+        ui_cinematic_done(g, 1);
+        return;
+    }
     if (g->script.suspended) {                       /* a cutscene is playing: the script owns the frame */
+        if (g->wait_button) {                        /* WAIT_BUTTON: all released, then any pressed */
+            if (g->wait_button == 1 && !pad) g->wait_button = 2;
+            else if (g->wait_button == 2 && pad) { g->wait_button = 0; g->script.wait = 1; }
+        }
         script_resume(&g->script, g);
         finish_script_frame(g);
         apply_pending(g);
         g->ticks++;
         g->prev_pad = pad;
+        if (g->cinematic && !g->script.suspended && g->pic_phase == 0) ui_cinematic_done(g, 0);
         return;
     }
+    if (g->cinematic) { ui_cinematic_done(g, 0); g->prev_pad = pad; return; }
     /* the per-frame player code (0x4fb8) shows the body every frame, except in first person */
     g->player_hidden = g->view_mode == 2;
     if ((pad & PAD_L) && !(g->prev_pad & PAD_L)) {   /* L: cycle the view (0x4a9c) */
@@ -492,6 +564,7 @@ void game_camera_reset(Game *g) { g->cam_reset_pending = 1; }
 
 static void finish_script_frame(Game *g) {
     if (g->script.suspended) return;
+    if (!g->cinematic && g->pic_phase == 0) g->pic_shown = -1;   /* the run ended: the room is drawn again */
     if (g->cam_reset_pending) { g->cam_reset_pending = 0; g->cam_mode = CAM_ZONE; g->camera = -1; }
 }
 

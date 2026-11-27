@@ -310,6 +310,20 @@ static void flow_next(Game *g) {
         u->in_game = 1;
         game_new(g);
         break;
+    case STEP_CREDITS:                                  /* 0xf70: macroEnd plays the credits over room scenes */
+        u->mode = UI_NONE;
+        u->in_game = 1;
+        if (game_start_cinematic(g, "macro/macroEnd", 1)) flow_next(g);
+        break;
+    case STEP_DEMO:                                     /* 0xdf8: the attract demos when the title times out */
+        u->mode = UI_NONE;
+        u->in_game = 1;
+        if (game_start_cinematic(g, "macro/macroDemo1", 2)) flow_next(g);
+        break;
+    case STEP_END_SCREEN:                               /* End.img, faded in over 60 frames */
+        open(g, UI_END, 0);
+        u->in_game = 0;
+        break;
     case STEP_RESUME:                                   /* back to a script that played a movie (0x9ee8) */
         u->mode = UI_NONE;
         if (saved_track > 0) audio_music(saved_track);
@@ -329,6 +343,25 @@ void ui_game_over(Game *g) {
     static const int s[] = {STEP_MOVIE + MV_GODS, STEP_TITLE};
     g->ui.in_game = 0;
     flow_set(g, s, 2);
+}
+
+void ui_ending(Game *g) {
+    static const int s[] = {STEP_MOVIE + MV_EDDS, STEP_CREDITS, STEP_END_SCREEN, STEP_TITLE};
+    g->ui.in_game = 0;
+    flow_set(g, s, 4);
+}
+
+void ui_cinematic_done(Game *g, int aborted) {
+    if (!aborted && g->cinematic_kind >= 2 && g->cinematic_kind < 4) {   /* demos 1 -> 2 -> 3 */
+        char m[32];
+        snprintf(m, sizeof m, "macro/macroDemo%d", g->cinematic_kind);
+        if (game_start_cinematic(g, m, g->cinematic_kind + 1) == 0) return;
+    }
+    log_msg("cinematic %d %s", g->cinematic_kind, aborted ? "skipped" : "finished");
+    g->cinematic = 0;
+    g->pic_shown = -1;
+    audio_music(0);
+    flow_next(g);
 }
 
 int ui_play_movie(Game *g, int stream_index) {
@@ -366,9 +399,9 @@ static void tick_title(Game *g, uint32_t pad) {
         else if (pressed(u, pad, PAD_A | PAD_B | PAD_C | PAD_START | PAD_X)) {   /* 0x2d90 */
             if (u->title_t < 1.5f) u->title_t = 1.5f;                             /* first press finishes the slide-in */
             else { u->title_chosen = u->title_sel; u->t = 0; audio_system_se(SE_OK); }
-        } else if (u->movie_done && u->title_t > 1.5f) {                           /* nothing chosen: the opening again */
-            static const int s[] = {STEP_MOVIE + MV_OPDS, STEP_TITLE};
-            flow_set(g, s, 2);
+        } else if (u->movie_done && u->title_t > 1.5f) {                           /* nothing chosen: demos, opening */
+            static const int s[] = {STEP_DEMO, STEP_MOVIE + MV_OPDS, STEP_TITLE};
+            flow_set(g, s, 3);
         }
         return;
     }
@@ -379,6 +412,12 @@ static void tick_title(Game *g, uint32_t pad) {
     case 2: start_load(g); break;
     case 3: { static const int s[] = {STEP_MOVIE + MV_PADDS, STEP_TITLE}; flow_set(g, s, 2); break; }
     }
+}
+
+static void tick_end(Game *g, uint32_t pad) {
+    Ui *u = &g->ui;
+    if (u->closing) return;
+    if (u->t > 3 * g->hz && pressed(u, pad, PAD_A | PAD_B | PAD_C | PAD_START)) u->closing = g->hz;
 }
 
 static void tick_load(Game *g, uint32_t pad) {
@@ -409,8 +448,10 @@ void ui_tick(Game *g, uint32_t pad) {
     case UI_MOVIE: tick_movie(g, pad); break;
     case UI_TITLE: tick_title(g, pad); break;
     case UI_LOAD: tick_load(g, pad); break;
+    case UI_END: tick_end(g, pad); break;
     }
     u->prev_pad = pad;
+    if (u->closing && u->mode == UI_END) { if (--u->closing == 0) flow_next(g); return; }
     if (u->closing && --u->closing == 0) {
         if (u->mode == UI_PAGES && u->back_to_menu && !u->pickup_after) {
             u->mode = UI_MENU; u->t = 0; u->sel = 1;
@@ -827,6 +868,13 @@ static void draw_title(Ctx *c, float a) {
     }
 }
 
+static void draw_end(Ctx *c, float a) {
+    Ui *u = &c->g->ui;
+    render_clear(c->w, c->h);
+    float f = fade_in_out(u, a, c->g->hz, c->g->hz);
+    draw_still(c, "images/END.IMG", f);
+}
+
 static void draw_load(Ctx *c, float a) {
     Game *g = c->g;
     Ui *u = &g->ui;
@@ -846,12 +894,29 @@ static void draw_load(Ctx *c, float a) {
     }
 }
 
-void ui_draw(Game *g, Renderer *r, int w, int h, float alpha) {
-    if (g->ui.mode == UI_NONE) return;
+static Ctx stage(Game *g, Renderer *r, int w, int h) {
     Ctx c = {g, r, w, h, 0, 0, 0};
     float s = (float)h / 240.0f;
     if (320 * s > w) s = (float)w / 320.0f;
     c.s = s; c.sx = floorf((w - 320 * s) / 2); c.sy = floorf((h - 240 * s) / 2);
+    return c;
+}
+
+void ui_draw_picture(Game *g, Renderer *r, int w, int h) {
+    Ctx c = stage(g, r, w, h);
+    render_clear(w, h);
+    const char *e = game_image_name(g, g->pic_shown);
+    if (!e) return;
+    char rel[96];
+    snprintf(rel, sizeof rel, "images/%s", e);
+    char *dot = strrchr(rel, '.');
+    if (dot && (!strcmp(dot, ".img") || !strcmp(dot, ".IMG"))) *dot = 0;
+    draw_still(&c, rel, 1);
+}
+
+void ui_draw(Game *g, Renderer *r, int w, int h, float alpha) {
+    if (g->ui.mode == UI_NONE) return;
+    Ctx c = stage(g, r, w, h);
     switch (g->ui.mode) {
     case UI_MENU: draw_menu(&c, alpha); break;
     case UI_PAGES: draw_pages(&c, alpha); break;
@@ -861,5 +926,6 @@ void ui_draw(Game *g, Renderer *r, int w, int h, float alpha) {
     case UI_MOVIE: draw_movie(&c, alpha); break;
     case UI_TITLE: draw_title(&c, alpha); break;
     case UI_LOAD: draw_load(&c, alpha); break;
+    case UI_END: draw_end(&c, alpha); break;
     }
 }

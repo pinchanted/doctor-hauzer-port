@@ -146,10 +146,16 @@ The original disc stays the source of truth. The tools rebuild the HD packs from
   - **Movies in the engine:** the 3DO streams are rebuilt as MPEG-1 + MP2 and decoded with pl_mpeg (one portable path for PC, Android and Vita). `tools/movies_build.py` extracts the Cinepak frames (with the 3DO quirk bytes removed and EDDS's three frame sizes centred), upscales them 4x and encodes them. The frames are extracted on MELCHIOR and Lanczos previews are installed; `tools\movies_build.bat` runs the AI upscale.
   - **English movies:** the fan patch never translated the movies (only padding bytes changed). The engine now covers the baked-in Japanese and draws English captions at screen resolution: the opening's headlines and narration, the door scene's lines, the four narration pages before the game, and the controls labels.
 
+- **2026-11-27** — **HD movies, the ending and the demos.**
+  - All 7,423 movie frames AI-upscaled on MELCHIOR (4x-PBRify_RPLKSRd_V3) and encoded: `assets_hd/movies`, 210 MB.
+  - **Ending:** room 313's `ENDING` command now plays `EDDS`, then the closing text pages (the fan patch's English) and the fly-through of eight rooms (rooms switch under the running script, as on the 3DO), then `End.img` and back to the title. Start skips the fly-through.
+  - **Attract demos:** when the title movie runs out, the three demo scripts play (any button stops them), then the opening, then the title.
+  - **`PICTURE` corrected:** it never waited for a button; the picture stays on screen while the script's own `WAIT_BUTTON` (decoded, previously ignored) waits, which removes a double button press at the room 001 windows.
+
 ## Next steps
 
-1. AI-upscale the movie frames on MELCHIOR (`tools\movies_build.bat`), then encode the HD movies.
-2. The ending: `EDDS`, then `macroEnd` (credits played over room 4 scenes, which needs `LOAD_ROOM` to switch rooms mid-script) and `End.img`; the title's attract demos (`macroDemo1–3`).
+1. Play-test the whole game on PC end to end, fixing what breaks (rooms 2xx/3xx puzzles, items, saves).
+2. Vita and Android front ends (input mapping, per-platform menus, movie playback cost on Vita).
 3. Re-letter the untranslated vase page (`sea22`); optional: re-letter all English pages at full resolution.
 4. Face animations in cutscenes (player slots 17+), room 211's cutscene camera.
 5. Optional: interpolate the 15 fps movies to 30/60 fps.
